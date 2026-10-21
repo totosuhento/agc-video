@@ -1,0 +1,28 @@
+# AGC Video di VPS dengan Docker + Caddy (SSL otomatis untuk semua domain).
+# 1) Ganti domain di file Caddyfile   2) docker compose up -d   3) buka https://domain-anda/install
+services:
+  agc:
+    image: ghcr.io/totosuhento/agc-video:latest
+    restart: unless-stopped
+    volumes:
+      - agc_storage:/var/www/html/storage   # semua situs, database & pengaturan
+    environment:
+      - CRON_ENABLED=1                        # ambil video tiap jam otomatis
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - agc
+
+volumes:
+  agc_storage:
+  caddy_data:
+  caddy_config:

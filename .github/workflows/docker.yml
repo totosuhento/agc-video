@@ -1,0 +1,77 @@
+# Build image Docker otomatis setiap ada perubahan di branch main,
+# lalu simpan di GitHub Container Registry: ghcr.io/<username>/<nama-repo>:latest
+name: Build Docker image
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: type=raw,value=latest
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+
+      # Uji cepat: jalankan image, instal lewat CLI, cek halaman (multi-situs & beberapa bahasa)
+      - name: Smoke test
+        run: |
+          IMAGE=$(echo "ghcr.io/${{ github.repository }}:latest" | tr '[:upper:]' '[:lower:]')
+          docker pull "$IMAGE"
+          fail() { echo "::error title=Smoke test::$1 | logs: $(docker logs agc 2>&1 | tail -8 | tr '\n' ' ')"; exit 1; }
+          code() { docker exec agc curl -s -o /dev/null -w '%{http_code}' -H "Host: $2" "http://localhost:$P$1" || true; }
+          run() {   # $1 = opsi docker run, $2 = port
+            P=${2:-8080}
+            docker rm -f agc >/dev/null 2>&1 || true
+            docker run -d --name agc -e CRON_ENABLED=0 $1 "$IMAGE" >/dev/null
+            for i in $(seq 1 30); do docker exec agc curl -s -o /dev/null "http://localhost:$P/install" && break; sleep 2; done
+          }
+          expect() {  # $1 = path, $2 = host, $3 = kode yang diharapkan
+            c=$(code "$1" "$2"); echo "[$2] $1 -> $c"; [ "$c" = "$3" ] || fail "[$2] $1 -> $c (harusnya $3)"
+          }
+
+          run ""
+          expect / localhost 302
+          expect /install localhost 200
+          docker exec agc php cli/setup.php admin --password=SmokeTest12345 || fail "setup admin"
+          docker exec agc php cli/setup.php site --host=localhost --name="Tutorial DE" --lang=de --country=CH --preset=software_tutorial --keywords="Excel,Buchhaltung" || fail "setup site"
+          docker exec agc php cli/setup.php site --host=kdrama.test --name="K-Drama" --lang=ko --preset=kdrama || fail "setup site 2"
+          for p in / /latest /popular /series /privacy /impressum /about /robots.txt /sitemap.xml /sitemap-pages-1.xml /ads.txt /assets/style.css /admin/login; do
+            expect "$p" localhost 200
+          done
+          expect /video/tidak-ada localhost 404
+          expect / kdrama.test 200
+          expect /impressum kdrama.test 404
+          expect / tidak-terdaftar.test 404
+          docker exec agc curl -s -H "Host: localhost" http://localhost:8080/ | grep -q 'lang="de-CH"' || fail "lang de-CH"
+          docker exec agc curl -s -H "Host: kdrama.test" http://localhost:8080/ | grep -q 'lang="ko"' || fail "lang ko"
+          docker exec agc php -r 'exit(extension_loaded("intl") ? 0 : 1);' || fail "intl"
+          docker exec agc php cli/status.php
+
+          # Hosting yang menjalankan container sebagai root & port kustom
+          run "--user 0:0"
+          expect /install localhost 200
+          run "-e PORT=3000" 3000
+          expect /install localhost 200

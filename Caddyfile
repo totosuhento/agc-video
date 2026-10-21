@@ -1,0 +1,6 @@
+# Tulis semua domain situs Anda di baris pertama (pisahkan koma). Caddy otomatis membuat SSL.
+# Setelah menambah domain baru: docker compose restart caddy
+domain-satu.com, www.domain-satu.com, domain-dua.com, www.domain-dua.com {
+	encode gzip
+	reverse_proxy agc:8080
+}

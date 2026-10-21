@@ -1,0 +1,6 @@
+storage/*.sqlite*
+storage/sites/*
+!storage/sites/.gitkeep
+storage/sessions/
+storage/trash/
+storage/*.lock

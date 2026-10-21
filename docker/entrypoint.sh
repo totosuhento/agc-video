@@ -1,6 +1,6 @@
 #!/bin/sh
 # Entrypoint container: siapkan folder storage, atur port, jalankan cron internal, lalu Apache.
-# Bisa berjalan sebagai user 1000 (NusaPod) maupun root.
+# Bisa berjalan sebagai user 1000 (non-root) maupun root.
 set -e
 APP=/var/www/html
 ST="$APP/storage"
@@ -17,7 +17,7 @@ if [ "$(id -u)" = "0" ]; then
     chown -R "$RUN_USER":"$RUN_USER" "$ST" 2>/dev/null || chmod -R a+rwX "$ST" 2>/dev/null || true
     as_www() { su -s /bin/sh "$RUN_USER" -c "$1" 2>/dev/null || (umask 000; sh -c "$1"); }
 else
-    # Non-root (mis. NusaPod uid 1000): cukup pastikan storage bisa ditulis
+    # Non-root (mis. uid 1000): cukup pastikan storage bisa ditulis
     chmod -R u+rwX "$ST" 2>/dev/null || true
     as_www() { sh -c "$1"; }
 fi

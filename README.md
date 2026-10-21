@@ -44,7 +44,7 @@ Dibangun dari dua AGC sebelumnya (Drama China & Tutorial Software Jerman) sebaga
 
 | Cara | Cocok untuk | Panduan |
 |---|---|---|
-| **Docker / Nusapod** | Hosting container, paling mudah di-update | [INSTALL-DOCKER.md](INSTALL-DOCKER.md) |
+| **Docker (VPS / hosting container)** | Hosting container, paling mudah di-update | [INSTALL-DOCKER.md](INSTALL-DOCKER.md) |
 | **VPS** | Banyak situs, trafik besar | [INSTALL-VPS.md](INSTALL-VPS.md) |
 | **Shared hosting (cPanel)** | Mulai murah 1–3 situs | [INSTALL-SHARED-HOSTING.md](INSTALL-SHARED-HOSTING.md) |
 
@@ -53,7 +53,7 @@ Setelah terpasang, semua cara sama: buka **`https://domain-anda/install`** → b
 ## Alur membuat situs niche baru (mis. drama Korea, horor)
 
 1. Arahkan DNS domain baru ke server yang sama.
-2. Tambahkan domain di server (Docker+Caddy: `Caddyfile`; cPanel: *Addon Domain* ke folder yang sama; Nusapod: tambah domain di container).
+2. Tambahkan domain di server (Docker+Caddy: `Caddyfile`; cPanel: *Addon Domain* ke folder yang sama; hosting container: tambah domain di container yang sama).
 3. Admin → **Situs** → **+ Tambah situs baru** → isi domain, judul, kategori (preset), bahasa, target negara, keyword, mode iklan.
 4. Admin → **Sumber video** → cari / tempel channel YouTube **resmi**, atau tambah sumber Dailymotion / Internet Archive / NASA / TikTok.
 5. Admin → **Iklan** → tempel kode AdSense / CPM / CPA.

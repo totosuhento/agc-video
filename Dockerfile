@@ -1,4 +1,4 @@
-# Nexora Content Engine — image Docker (Nusapod, VPS dengan Docker, hosting container lain)
+# Nexora Content Engine — image Docker (VPS dengan Docker, hosting container)
 FROM php:8.3-apache
 
 # Apache: rewrite untuk URL cantik; opcache untuk kecepatan.
@@ -28,7 +28,7 @@ COPY docker/entrypoint.sh /usr/local/bin/agc-entrypoint
 WORKDIR /var/www/html
 COPY . /var/www/html
 
-# Folder storage dibuat saat build dan bisa ditulis oleh user 1000 (NusaPod) maupun www-data
+# Folder storage dibuat saat build dan bisa ditulis oleh user 1000 (non-root) maupun www-data
 RUN chmod +x /usr/local/bin/agc-entrypoint \
  && rm -rf /var/www/html/docker /var/www/html/.github \
  && mkdir -p /var/www/html/storage/sites /var/www/html/storage/sessions \
@@ -41,7 +41,7 @@ EXPOSE 8080
 # Database, cache & log disimpan di sini → pasang sebagai persistent volume
 VOLUME ["/var/www/html/storage"]
 
-# NusaPod menjalankan container sebagai user 1000 (non-root) di port 8080
+# Banyak hosting container menjalankan container sebagai user 1000 (non-root) di port 8080
 USER 1000:1000
 
 ENTRYPOINT ["agc-entrypoint"]

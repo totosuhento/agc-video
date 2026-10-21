@@ -318,7 +318,7 @@ function page_dashboard(): void
     </ul>
 
     <h2>Jadwal otomatis (cron)</h2>
-    <p class="help">Docker/Nusapod: sudah otomatis, tidak perlu apa-apa. VPS / shared hosting: pasang salah satu:</p>
+    <p class="help">Docker: sudah otomatis, tidak perlu apa-apa. VPS / shared hosting: pasang salah satu:</p>
     <pre>7 * * * *    php <?= e(ROOT) ?>/cli/fetch.php > /dev/null 2>&amp;1
 */30 * * * * php <?= e(ROOT) ?>/cli/enrich.php > /dev/null 2>&amp;1</pre>
     <p class="help">Hosting tanpa menu Cron Jobs: panggil URL ini tiap jam dari layanan cron gratis (mis. cron-job.org):<br>
@@ -336,7 +336,7 @@ function money_checks(): array
     $url = (string)cfg('site.url', '');
     $host = strtolower((string)parse_url($url, PHP_URL_HOST));
     $freeHost = $host === '' || filter_var($host, FILTER_VALIDATE_IP) || $host === 'localhost'
-        || preg_match('/\.(nusapod\.biz\.id|pages\.dev|workers\.dev|vercel\.app|netlify\.app|github\.io|herokuapp\.com|onrender\.com|railway\.app|fly\.dev|trycloudflare\.com|ngrok(-free)?\.app|000webhostapp\.com|infinityfreeapp\.com|blogspot\.com)$/', $host);
+        || preg_match('/\.(pages\.dev|workers\.dev|vercel\.app|netlify\.app|github\.io|herokuapp\.com|onrender\.com|railway\.app|fly\.dev|trycloudflare\.com|ngrok(-free)?\.app|000webhostapp\.com|infinityfreeapp\.com|blogspot\.com)$/', $host);
     $live = articles_count();
     $future = (int)q("SELECT COUNT(*) FROM articles WHERE status = 'published' AND published_at > ?", [now()])->fetchColumn();
     $nAll = (int)q('SELECT COUNT(*) FROM videos WHERE is_active = 1')->fetchColumn();
@@ -344,7 +344,7 @@ function money_checks(): array
     $gsc = seo_verify_code((string)cfg('seo.google_verify', '')) !== '' || str_contains((string)cfg('analytics', ''), 'google-site-verification');
     return [
         ['Memakai domain sendiri', !$freeHost, '/admin/settings',
-            'AdSense hanya menerima domain milik Anda (mis. namasitus.com). Subdomain hosting seperti *.nusapod.biz.id tidak bisa didaftarkan.'],
+            'AdSense hanya menerima domain milik Anda (mis. namasitus.com). Subdomain gratis dari penyedia hosting/VPS (mis. namaanda.penyedia-hosting.com) tidak bisa didaftarkan.'],
         ['Situs memakai HTTPS', str_starts_with($url, 'https://'), '/admin/settings', 'Isi URL situs dengan https:// dan pasang SSL.'],
         ['Minimal 15 artikel orisinal sudah terbit (' . $live . ')', $live >= 15, '/admin/articles',
             'Pintu masuk trafik Google adalah artikel. Daftar AdSense setelah ±15–20 artikel yang sudah Anda cek.'],

@@ -1,4 +1,4 @@
-# Pasang Nexora Content Engine di Docker / Nusapod
+# Pasang Nexora Content Engine di Docker (VPS / hosting container)
 
 Image siap pakai dibuat otomatis oleh GitHub Actions dan diuji sebelum dipublikasikan:
 
@@ -6,14 +6,14 @@ Image siap pakai dibuat otomatis oleh GitHub Actions dan diuji sebelum dipublika
 ghcr.io/totosuhento/agc-video:latest
 ```
 
-Image ini berjalan sebagai user 1000 di port **8080** (sesuai Nusapod) dan juga bisa dijalankan sebagai root / port lain.
+Image ini berjalan sebagai user 1000 di port **8080** (standar banyak hosting container) dan juga bisa dijalankan sebagai root / port lain.
 
 ## 1. Image Docker
 
 Jika repo `agc-video` sudah ada di GitHub Anda, image dibuat otomatis setiap ada perubahan (tab **Actions** harus hijau ✅).
 Jadikan package **Public** sekali saja: profil GitHub → **Packages** → `agc-video` → **Package settings** → **Change visibility** → **Public**.
 
-## 2. Buat container di Nusapod
+## 2. Buat container di VPS / hosting container
 
 | Pengaturan | Isi |
 |---|---|
@@ -36,7 +36,7 @@ Lakukan langkah 1 segera setelah container jalan (siapa pun yang membuka `/insta
 
 ## Update
 
-Ubah file di repo GitHub → Actions membuat & menguji image baru → **Redeploy / pull latest** di Nusapod. Data di volume tetap aman.
+Ubah file di repo GitHub → Actions membuat & menguji image baru → **Redeploy / pull latest** di panel hosting atau VPS Anda. Data di volume tetap aman.
 
 ## Masalah umum
 

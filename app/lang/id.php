@@ -72,6 +72,7 @@ return [
     'site_not_ready' => 'Situs ini belum disiapkan.',
     'articles' => 'Artikel',
     'latest_articles' => 'Artikel terbaru',
+    'related_articles' => 'Artikel terkait',
     'read_more' => 'Baca selengkapnya',
     'related_videos' => 'Video terkait',
     'articles_meta' => 'Panduan, daftar, dan berita seputar {niche} di %s.',

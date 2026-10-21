@@ -46,6 +46,7 @@ $hasArticles = function_exists('articles_count') && articles_count() > 0;
 <?php if ($accent): ?><style>:root{--accent:<?= $accent ?>}</style>
 <?php endif; ?>
 <?php if ($schema) echo json_ld($schema), "\n"; ?>
+<?= seo_verify_meta() ?>
 <?= cfg('analytics', '') ?>
 <?= adsense_head() ?>
 <?= cfg('push.head', '') ?>

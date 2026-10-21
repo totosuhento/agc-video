@@ -72,6 +72,7 @@ return [
     'site_not_ready' => '이 웹사이트는 아직 설정되지 않았습니다.',
     'articles' => '아티클',
     'latest_articles' => '최신 아티클',
+    'related_articles' => '관련 글',
     'read_more' => '더 읽기',
     'related_videos' => '관련 동영상',
     'articles_meta' => '%s의 {niche} 가이드, 추천 목록, 소식.',

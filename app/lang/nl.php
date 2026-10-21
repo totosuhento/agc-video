@@ -72,6 +72,7 @@ return [
     'site_not_ready' => 'Deze website is nog niet ingesteld.',
     'articles' => 'Artikelen',
     'latest_articles' => 'Nieuwste artikelen',
+    'related_articles' => 'Gerelateerde artikelen',
     'read_more' => 'Lees verder',
     'related_videos' => 'Gerelateerde video\'s',
     'articles_meta' => 'Gidsen, lijstjes en nieuws over {niche} op %s.',

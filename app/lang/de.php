@@ -74,6 +74,7 @@ return [
     'site_not_ready' => 'Diese Website ist noch nicht eingerichtet.',
     'articles' => 'Artikel',
     'latest_articles' => 'Neueste Artikel',
+    'related_articles' => 'Passende Artikel',
     'read_more' => 'Weiterlesen',
     'related_videos' => 'Passende Videos',
     'articles_meta' => 'Ratgeber, Listen und News rund um {niche} auf %s.',

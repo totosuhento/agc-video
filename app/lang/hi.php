@@ -72,6 +72,7 @@ return [
     'site_not_ready' => 'यह वेबसाइट अभी सेट अप नहीं हुई है।',
     'articles' => 'लेख',
     'latest_articles' => 'नए लेख',
+    'related_articles' => 'संबंधित लेख',
     'read_more' => 'आगे पढ़ें',
     'related_videos' => 'संबंधित वीडियो',
     'articles_meta' => '%s पर {niche} से जुड़ी गाइड, सूचियाँ और खबरें।',

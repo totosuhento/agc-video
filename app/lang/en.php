@@ -73,6 +73,7 @@ return [
     'site_not_ready' => 'This website is not set up yet.',
     'articles' => 'Articles',
     'latest_articles' => 'Latest articles',
+    'related_articles' => 'Related articles',
     'read_more' => 'Read more',
     'related_videos' => 'Related videos',
     'articles_meta' => 'Guides, lists and news about {niche} on %s.',

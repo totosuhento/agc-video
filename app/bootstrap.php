@@ -18,3 +18,4 @@ require ROOT . '/app/core.php';
 require ROOT . '/app/db.php';
 require ROOT . '/app/repo.php';
 require ROOT . '/app/social.php';
+require ROOT . '/app/seo.php';

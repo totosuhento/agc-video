@@ -84,6 +84,7 @@ $routes = [
     '#^/articles$#'                           => 'page_articles',
     '#^/article/([a-z0-9-]{1,120})$#'         => 'page_article',
     '#^/([A-Za-z0-9_.-]{1,60}\.js)$#'         => 'push_sw',
+    '#^/([a-f0-9]{32})\.txt$#'                => 'indexnow_key_page',
 ];
 
 $res = null;

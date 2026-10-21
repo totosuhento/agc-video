@@ -18,7 +18,7 @@
 
 <?php if ($more): ?>
 <section class="block">
-  <div class="block-head"><h2><?= e(t('latest_articles')) ?></h2><a href="/articles"><?= e(t('view_all')) ?> →</a></div>
+  <div class="block-head"><h2><?= e(t('related_articles')) ?></h2><a href="/articles"><?= e(t('view_all')) ?> →</a></div>
   <div class="article-list"><?php foreach ($more as $m): ?><?= view('partials/article_card', ['a' => $m]) ?><?php endforeach; ?></div>
 </section>
 <?php endif; ?>

@@ -271,6 +271,7 @@ function default_config(): array
             'ads_txt' => '',
         ],
         'sources' => [],                  // sumber selain YouTube: [{type, value}]
+        'seo' => ['video_index' => 'smart', 'indexnow' => true, 'google_verify' => '', 'bing_verify' => '', 'naver_verify' => '', 'yandex_verify' => ''],
         'share' => ['enabled' => true, 'networks' => ['whatsapp', 'telegram', 'facebook', 'x', 'pinterest', 'reddit']],
         'social' => ['telegram_enabled' => false, 'telegram_token' => '', 'telegram_chat' => '', 'telegram_per_run' => 5],
         'push' => ['head' => '', 'sw_name' => '', 'sw_code' => ''],

@@ -90,6 +90,7 @@ function page_video(string $slug): array
     $content = view('video', [
         'v' => $v, 'text' => $text, 'series' => $series, 'episodes' => $episodes,
         'prev' => $prev, 'next' => $next, 'related' => related_videos($v, 12),
+        'articles' => articles_related($v['title'] . ' ' . ($series['title'] ?? ''), 3),
     ]);
     return html($content, [
         'title' => $v['title'] . ' | ' . cfg('site.name'),
@@ -98,6 +99,7 @@ function page_video(string $slug): array
         'image' => (video_source($v) === 'youtube' ? ($v['thumb'] ?: yt_thumb($v['id'])) : (string)$v['thumb']) ?: null,
         'og_type' => 'video.other',
         'hreflang_video' => $v['id'],
+        'noindex' => !video_indexable($v),
         'schema' => $schema,
     ]);
 }
@@ -258,7 +260,7 @@ function page_article(string $slug): array
         return not_found();
     }
     $related = trim((string)$a['keyword']) !== '' ? videos_search((string)$a['keyword'], 1, 8)[0] : [];
-    $more = array_values(array_filter(articles_list(1, 4)[0], fn($x) => $x['slug'] !== $slug));
+    $more = articles_related($a['title'] . ' ' . $a['keyword'], 3, $slug);
     $desc = excerpt(trim((string)$a['excerpt']) ?: (string)preg_replace('/[#*\[\]>]/', '', (string)$a['body']), 158);
     $image = (string)($a['cover'] ?: ($related ? video_thumb($related[0], 'hqdefault') : ''));
     $schema = [
@@ -296,6 +298,13 @@ function push_sw(string $name): array
     return ['status' => 200, 'type' => 'application/javascript; charset=utf-8', 'body' => (string)cfg('push.sw_code')];
 }
 
+function indexnow_key_page(string $k): array
+{
+    return cfg('seo.indexnow', true) && hash_equals(indexnow_key(), $k)
+        ? ['status' => 200, 'type' => 'text/plain; charset=utf-8', 'body' => $k]
+        : not_found();
+}
+
 function ads_txt_page(): array
 {
     return ['status' => 200, 'type' => 'text/plain; charset=utf-8', 'body' => ads_txt()];
@@ -327,7 +336,7 @@ function breadcrumb_schema(array $crumbs): array
 
 function sitemap_index(): array
 {
-    $nv = (int)q('SELECT COUNT(*) FROM videos WHERE is_active = 1')->fetchColumn();
+    $nv = (int)q('SELECT COUNT(*) FROM videos WHERE is_active = 1 AND ' . video_index_sql())->fetchColumn();
     $ns = (int)q('SELECT COUNT(*) FROM series WHERE is_active = 1 AND video_count > 1')->fetchColumn();
     $parts = ['sitemap-pages-1.xml'];
     for ($i = 1; $i <= max(1, (int)ceil($ns / SITEMAP_SIZE)); $i++) {
@@ -371,7 +380,7 @@ function sitemap_part(string $kind, string $n): array
             $urls[] = [url('series/' . $r['slug']), $r['updated_at']];
         }
     } else {
-        foreach (q('SELECT slug, updated_at FROM videos WHERE is_active = 1 ORDER BY published_at DESC LIMIT ? OFFSET ?',
+        foreach (q('SELECT slug, updated_at FROM videos WHERE is_active = 1 AND ' . video_index_sql() . ' ORDER BY published_at DESC LIMIT ? OFFSET ?',
             [SITEMAP_SIZE, $offset])->fetchAll() as $r) {
             $urls[] = [url('video/' . $r['slug']), $r['updated_at']];
         }

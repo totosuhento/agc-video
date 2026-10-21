@@ -60,6 +60,11 @@ function run_fetch_site(string $siteId, array $overrides = []): string
         if (function_exists('social_autopost')) {
             social_autopost();
         }
+        try {
+            indexnow_ping_new();
+        } catch (Throwable $e) {
+            logmsg('IndexNow gagal: ' . $e->getMessage());
+        }
     } catch (Throwable $e) {
         logmsg('ERROR: ' . $e->getMessage());
     } finally {
@@ -104,6 +109,7 @@ function run_enrich_site(string $siteId): int
     }
     $limit = (int)cfg('ai.per_run', 30);
     $done = 0;
+    $newlyIndexable = [];
     $series = q("SELECT s.id, s.title, s.description, c.title AS channel FROM series s LEFT JOIN channels c ON c.id = s.channel_id
                  WHERE s.is_active = 1 AND s.video_count > 1 AND (s.ai_summary IS NULL OR s.ai_summary = '')
                  ORDER BY s.video_count DESC LIMIT ?", [max(1, intdiv($limit, 3))])->fetchAll();
@@ -127,6 +133,7 @@ function run_enrich_site(string $siteId): int
             $txt = AI::describe('video', $v['title'], (string)$v['description'], (string)$v['channel_title']);
             if ($txt !== '') {
                 q('UPDATE videos SET ai_summary = ? WHERE id = ?', [$txt, $v['id']]);
+                $newlyIndexable[] = $v['id'];
                 $done++;
             }
         } catch (Throwable $e) {
@@ -138,6 +145,14 @@ function run_enrich_site(string $siteId): int
     fclose($lock);
     if ($done) {
         cache_clear();
+    }
+    if ($newlyIndexable && cfg('seo.video_index', 'smart') !== 'all') {
+        try {
+            $in = implode(',', array_fill(0, count($newlyIndexable), '?'));
+            indexnow_submit(array_map(fn($s) => url('video/' . $s), q("SELECT slug FROM videos WHERE id IN ($in)", $newlyIndexable)->fetchAll(PDO::FETCH_COLUMN)));
+        } catch (Throwable $e) {
+            logmsg('IndexNow gagal: ' . $e->getMessage());
+        }
     }
     logmsg("AI: $done deskripsi ditulis.");
     return $done + $articles;
@@ -175,8 +190,8 @@ function process_article_queue(int $max): int
     foreach ($items as $it) {
         try {
             $kw = trim((string)$it['keyword']);
-            $titles = $kw !== '' ? array_column(videos_search($kw, 1, 15)[0], 'title') : [];
-            $a = AI::articleFull((string)$it['brief'], $kw, $titles, (string)$it['notes']);
+            $videos = $kw !== '' ? videos_search($kw, 1, 12)[0] : [];
+            $a = AI::articleFull((string)$it['brief'], $kw, $videos, (string)$it['notes']);
             $slug = slugify($a['title'], 90);
             if ($slug === 'video') {
                 $slug = 'article-' . $it['id'];

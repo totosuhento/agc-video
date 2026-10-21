@@ -286,6 +286,7 @@ function page_dashboard(): void
         $checks[] = ['Impressum: nama & alamat (wajib di Jerman)', trim((string)cfg('legal.name')) !== '' && trim((string)cfg('legal.address')) !== '', '/admin/settings#legal'];
     }
     $base = rtrim((string)cfg('site.url'), '/');
+    $money = money_checks();
     ob_start(); ?>
     <div class="cards">
       <div class="stat"><b><?= number_format($st['videos']) ?></b><span>video tampil</span></div>
@@ -309,6 +310,13 @@ function page_dashboard(): void
       <?php endforeach; ?>
     </ul>
 
+    <h2>Siap menghasilkan dolar? <small class="muted">(<?= count(array_filter(array_column($money, 1))) ?>/<?= count($money) ?>)</small></h2>
+    <ul class="checks">
+      <?php foreach ($money as [$label, $done, $link, $why]): ?>
+        <li><?= $done ? '✅' : '⬜' ?> <a href="<?= e($link) ?>"><?= e($label) ?></a><?php if (!$done): ?><br><small class="muted"><?= e($why) ?></small><?php endif; ?></li>
+      <?php endforeach; ?>
+    </ul>
+
     <h2>Jadwal otomatis (cron)</h2>
     <p class="help">Docker/Nusapod: sudah otomatis, tidak perlu apa-apa. VPS / shared hosting: pasang salah satu:</p>
     <pre>7 * * * *    php <?= e(ROOT) ?>/cli/fetch.php > /dev/null 2>&amp;1
@@ -320,6 +328,35 @@ function page_dashboard(): void
     <h2>Log terakhir</h2>
     <pre class="log"><?= e(log_tail(40) ?: 'Belum ada log.') ?></pre>
     <?php echo admin_layout('Dashboard', (string)ob_get_clean());
+}
+
+/** Checklist SEO & monetisasi: [label, selesai?, link, alasan]. */
+function money_checks(): array
+{
+    $url = (string)cfg('site.url', '');
+    $host = strtolower((string)parse_url($url, PHP_URL_HOST));
+    $freeHost = $host === '' || filter_var($host, FILTER_VALIDATE_IP) || $host === 'localhost'
+        || preg_match('/\.(nusapod\.biz\.id|pages\.dev|workers\.dev|vercel\.app|netlify\.app|github\.io|herokuapp\.com|onrender\.com|railway\.app|fly\.dev|trycloudflare\.com|ngrok(-free)?\.app|000webhostapp\.com|infinityfreeapp\.com|blogspot\.com)$/', $host);
+    $live = articles_count();
+    $future = (int)q("SELECT COUNT(*) FROM articles WHERE status = 'published' AND published_at > ?", [now()])->fetchColumn();
+    $nAll = (int)q('SELECT COUNT(*) FROM videos WHERE is_active = 1')->fetchColumn();
+    $nAi = (int)q("SELECT COUNT(*) FROM videos WHERE is_active = 1 AND ai_summary IS NOT NULL AND ai_summary <> ''")->fetchColumn();
+    $gsc = seo_verify_code((string)cfg('seo.google_verify', '')) !== '' || str_contains((string)cfg('analytics', ''), 'google-site-verification');
+    return [
+        ['Memakai domain sendiri', !$freeHost, '/admin/settings',
+            'AdSense hanya menerima domain milik Anda (mis. namasitus.com). Subdomain hosting seperti *.nusapod.biz.id tidak bisa didaftarkan.'],
+        ['Situs memakai HTTPS', str_starts_with($url, 'https://'), '/admin/settings', 'Isi URL situs dengan https:// dan pasang SSL.'],
+        ['Minimal 15 artikel orisinal sudah terbit (' . $live . ')', $live >= 15, '/admin/articles',
+            'Pintu masuk trafik Google adalah artikel. Daftar AdSense setelah ±15–20 artikel yang sudah Anda cek.'],
+        ['Ada artikel terjadwal ke depan (' . $future . ')', $future > 0, '/admin/articles',
+            'Terbit rutin (mis. 1 artikel/hari) lebih disukai Google daripada banyak sekaligus lalu berhenti.'],
+        ['Deskripsi unik AI untuk halaman video aktif', (bool)cfg('ai.enabled') || cfg('seo.video_index', 'smart') === 'all', '/admin/settings',
+            'Tanpa deskripsi unik, halaman video tidak diindeks (proteksi konten tipis). Aktifkan agar video ikut mendatangkan trafik.'],
+        ['Proteksi halaman tipis aktif (' . $nAi . '/' . $nAll . ' video layak index)', cfg('seo.video_index', 'smart') !== 'all', '/admin/settings#seo',
+            'Mode "Semua video" berisiko: ratusan halaman salinan YouTube bisa membuat seluruh situs turun peringkat.'],
+        ['Terverifikasi di Google Search Console', $gsc, '/admin/settings#seo',
+            'Daftarkan domain di search.google.com/search-console, tempel kode verifikasinya, lalu kirim sitemap.xml.'],
+    ];
 }
 
 function action_fetch(): void
@@ -394,6 +431,12 @@ function page_settings(): void
         $c['ai']['per_run'] = clamp_int(post('ai.per_run'), 1, 500, 30);
         $c['ai']['articles_per_run'] = clamp_int(post('ai.articles_per_run'), 0, 20, 2);
 
+        $c['seo']['video_index'] = post('seo.video_index') === 'all' ? 'all' : 'smart';
+        $c['seo']['indexnow'] = (bool)post('seo.indexnow', false);
+        foreach (array_keys(SEO_VERIFY) as $k) {
+            $c['seo'][$k] = seo_verify_code((string)post('seo.' . $k));
+        }
+
         $c['legal']['name'] = trim((string)post('legal.name'));
         $c['legal']['address'] = trim((string)post('legal.address'));
         $c['analytics'] = (string)post('analytics');
@@ -465,6 +508,27 @@ function page_settings(): void
           <label>Deskripsi per jalan<input type="number" name="ai[per_run]" value="<?= (int)$c['ai']['per_run'] ?>" min="1"></label>
           <label>Artikel antrian per jalan <small>(tiap 30 menit)</small><input type="number" name="ai[articles_per_run]" value="<?= (int)($c['ai']['articles_per_run'] ?? 2) ?>" min="0" max="20"></label>
         </div>
+      </fieldset>
+
+      <?php $nAll = (int)q('SELECT COUNT(*) FROM videos WHERE is_active = 1')->fetchColumn();
+            $nAi = (int)q("SELECT COUNT(*) FROM videos WHERE is_active = 1 AND ai_summary IS NOT NULL AND ai_summary <> ''")->fetchColumn(); ?>
+      <fieldset id="seo"><legend>SEO & mesin pencari</legend>
+        <label>Halaman video yang boleh diindeks Google<select name="seo[video_index]">
+          <option value="smart">Hanya yang punya deskripsi unik (disarankan)</option>
+          <option value="all" <?= ($c['seo']['video_index'] ?? 'smart') === 'all' ? 'selected' : '' ?>>Semua video</option>
+        </select></label>
+        <p class="help">Halaman yang isinya sama persis dengan YouTube dianggap "konten tipis" dan bisa menurunkan seluruh situs.
+          Mode disarankan memberi <code>noindex</code> pada video tanpa deskripsi unik (tetap bisa ditonton & tetap dapat iklan), dan baru memasukkannya ke sitemap setelah AI menulis deskripsinya.
+          Saat ini: <b><?= number_format($nAi) ?></b> dari <?= number_format($nAll) ?> video punya deskripsi unik<?= !$c['ai']['enabled'] ? ' — aktifkan <b>Deskripsi unik dengan AI</b> di atas' : '' ?>.
+          Artikel, playlist, channel, dan halaman topik selalu diindeks.</p>
+        <label class="check"><input type="checkbox" name="seo[indexnow]" value="1" <?= ($c['seo']['indexnow'] ?? true) ? 'checked' : '' ?>> Kirim URL baru otomatis ke Bing, Yandex, Naver (IndexNow)</label>
+        <p class="help">Halaman baru (artikel terjadwal yang terbit, video baru) diberitahukan ke mesin pencari dalam hitungan jam. Google tidak memakai IndexNow — untuk Google cukup kirim sitemap di Search Console.</p>
+        <div class="grid2">
+          <?php foreach (SEO_VERIFY as $k => [$meta, $label]): ?>
+            <label>Kode verifikasi <?= e($label) ?><input name="seo[<?= $k ?>]" value="<?= e((string)($c['seo'][$k] ?? '')) ?>" placeholder="tempel kode atau seluruh tag &lt;meta&gt;"></label>
+          <?php endforeach; ?>
+        </div>
+        <p class="help">Sitemap untuk didaftarkan: <code><?= e(rtrim((string)$c['site']['url'], '/')) ?>/sitemap.xml</code></p>
       </fieldset>
 
       <fieldset id="legal"><legend>Identitas pemilik (Impressum)</legend>

@@ -72,6 +72,7 @@ return [
     'site_not_ready' => 'Ce site n’est pas encore configuré.',
     'articles' => 'Articles',
     'latest_articles' => 'Derniers articles',
+    'related_articles' => 'Articles similaires',
     'read_more' => 'Lire la suite',
     'related_videos' => 'Vidéos associées',
     'articles_meta' => 'Guides, sélections et actualités : {niche} sur %s.',

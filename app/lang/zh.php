@@ -72,6 +72,7 @@ return [
     'site_not_ready' => '本网站尚未设置。',
     'articles' => '文章',
     'latest_articles' => '最新文章',
+    'related_articles' => '相关文章',
     'read_more' => '阅读全文',
     'related_videos' => '相关视频',
     'articles_meta' => '%s 上关于{niche}的指南、榜单和资讯。',

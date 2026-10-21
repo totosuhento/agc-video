@@ -72,6 +72,7 @@ return [
     'site_not_ready' => 'このウェブサイトはまだ設定されていません。',
     'articles' => '記事',
     'latest_articles' => '新着記事',
+    'related_articles' => '関連記事',
     'read_more' => '続きを読む',
     'related_videos' => '関連動画',
     'articles_meta' => '%sの{niche}に関するガイド・まとめ・ニュース。',

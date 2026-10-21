@@ -75,17 +75,18 @@ final class AI
      * Tulis cepat: topik (boleh bahasa Indonesia) → artikel lengkap dalam bahasa situs.
      * @return array{title:string, excerpt:string, summary_id:string, body:string}
      */
-    public static function articleFull(string $topic, string $keyword, array $videoTitles, string $notes): array
+    public static function articleFull(string $topic, string $keyword, array $videos, string $notes): array
     {
         $lang = self::language();
         $niche = trim((string)cfg('site.niche', '')) ?: t('_niche');
-        $list = implode("\n", array_map(fn($t) => '- ' . $t, array_slice($videoTitles, 0, 15))) ?: '(none)';
+        $videos = array_slice(array_values(array_filter($videos, fn($v) => !empty($v['slug']))), 0, 12);
+        $list = implode("\n", array_map(fn($v) => '- [video:' . $v['slug'] . '] ' . $v['title'], $videos)) ?: '(none)';
         $prompt = <<<P
         You write for a website about $niche. Write ONE original, genuinely helpful blog article in $lang.
         The editor described the topic (possibly in Indonesian; translate the idea, do not copy Indonesian words):
         "$topic"
         Main keyword (use naturally): $keyword
-        Videos available on the site that you may mention by their exact titles:
+        Videos on the site (marker + title):
         $list
         Extra notes from the editor: $notes
 
@@ -94,6 +95,9 @@ final class AI
         - Explain, compare, give tips or a watching/learning order. Natural tone, no keyword stuffing.
         - Do NOT invent facts (release dates, cast, numbers, awards, prices). If unsure, stay general.
         - No links, no emojis, no "click here", no calls to install apps.
+        - If videos are listed: embed the 1 to 3 most relevant ones by putting their marker (e.g. [video:some-slug]) alone on its own line
+          right after the paragraph that talks about them. Copy markers exactly; never invent one. Skip this if none fits.
+        - End with a short concluding section that helps the reader decide what to watch or do next.
 
         Answer EXACTLY in this format:
         TITLE: <catchy, accurate title in $lang, max 70 characters>
@@ -115,6 +119,13 @@ final class AI
         if ($out['body'] === '' || $out['title'] === '') {
             throw new RuntimeException('format jawaban AI tidak sesuai, coba lagi');
         }
+        // hanya izinkan penanda video yang memang ada, maksimal 3
+        $ok = array_column($videos, 'slug');
+        $used = 0;
+        $out['body'] = (string)preg_replace_callback('/^[ \t]*\[video:\s*([a-z0-9-]+)\s*\][ \t]*$/mi', function ($m) use ($ok, &$used) {
+            return in_array(strtolower($m[1]), $ok, true) && ++$used <= 3 ? '[video:' . strtolower($m[1]) . ']' : '';
+        }, $out['body']);
+        $out['body'] = trim((string)preg_replace("/\n{3,}/", "\n\n", $out['body']));
         return $out;
     }
 

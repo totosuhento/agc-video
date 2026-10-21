@@ -53,6 +53,13 @@ $player = $src === 'nasa' ? 'mp4' : 'iframe';
     </p>
     <?= share_buttons(url('video/' . $v['slug']), $v['title'], $poster) ?>
 
+    <?php if (!empty($articles)): ?>
+    <section class="block">
+      <div class="block-head"><h2><?= e(t('related_articles')) ?></h2></div>
+      <div class="article-list"><?php foreach ($articles as $a): ?><?= view('partials/article_card', ['a' => $a]) ?><?php endforeach; ?></div>
+    </section>
+    <?php endif; ?>
+
     <?php if ($series && count($episodes) > 1): ?>
     <section class="block">
       <div class="block-head"><h2><?= e(t('all_episodes')) ?> · <?= e($series['title']) ?></h2></div>

@@ -26,6 +26,7 @@ Dibangun dari dua AGC sebelumnya (Drama China & Tutorial Software Jerman) sebaga
 - **Target negara** (mis. Kanada `en-CA`/`fr-CA`, Swiss `de-CH`/`fr-CH`): atribut bahasa HTML, `og:locale`, format tanggal & angka lokal.
 - **Halaman topik dari keyword** (`/topic/...`), sitemap, schema VideoObject/Breadcrumb/ItemList, canonical, robots.txt, `max-image-preview:large` (Google Discover).
 - **Modul artikel** (`/articles`): editor di admin, format Markdown sederhana, sisip kartu video `[video:slug]`, jadwal terbit, slot iklan *in-article* otomatis, schema BlogPosting, draf AI opsional.
+- **Tulis cepat + jadwal terbit**: tempel banyak topik (boleh bahasa Indonesia) → AI menulis artikel lengkap dalam bahasa situs dan menyimpannya sebagai **draf**, lengkap dengan ringkasan bahasa Indonesia dan tombol *Terjemahkan ke Indonesia* untuk mengecek isi. Draf yang sudah dicek dijadwalkan sekaligus (mis. 1 artikel per hari mulai besok 08:00 WIB); artikel terbit otomatis tepat waktunya.
 - **Situs saudara multi-bahasa**: isi nama grup yang sama di beberapa situs (mis. drakor EN/ES/DE) → otomatis `hreflang` + pemilih bahasa di footer.
 - **Tombol share** ringan (WhatsApp, Telegram, Facebook, X, Pinterest, Reddit, LinkedIn, LINE, VK, Email, salin link, share bawaan HP) tanpa script pihak ketiga.
 - **Auto-post ke channel Telegram** untuk video & artikel baru, dan **push notification** (OneSignal / Monetag / PropellerAds) dengan service worker yang dilayani langsung oleh script.

@@ -32,6 +32,7 @@ Satu instalasi dan satu cron melayani semua situs.
 ## Hosting tanpa Cron Jobs
 
 Dashboard admin menampilkan URL rahasia `https://domain-anda/_cron/xxxxxxxx`. Panggil URL itu tiap jam dari layanan cron gratis (mis. cron-job.org).
+Bila memakai AI (deskripsi video / antrian *Tulis cepat* artikel), buat juga job kedua tiap 30 menit ke URL yang sama ditambah `?enrich=1`.
 
 ## Keterbatasan shared hosting
 

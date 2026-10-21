@@ -89,12 +89,18 @@ function cleanup_removed_channels(array $keep): void
 function run_enrich_site(string $siteId): int
 {
     $site = Site::activate($siteId);
-    if (!cfg('ai.enabled') || trim((string)cfg('ai.api_key', '')) === '') {
+    if (trim((string)cfg('ai.api_key', '')) === '') {
         return 0;
     }
     $lock = fopen($site->dir() . '/enrich.lock', 'c');
     if (!$lock || !flock($lock, LOCK_EX | LOCK_NB)) {
         return 0;
+    }
+    $articles = process_article_queue(max(0, (int)cfg('ai.articles_per_run', 2)));
+    if (!cfg('ai.enabled')) {
+        flock($lock, LOCK_UN);
+        fclose($lock);
+        return $articles;
     }
     $limit = (int)cfg('ai.per_run', 30);
     $done = 0;
@@ -134,7 +140,7 @@ function run_enrich_site(string $siteId): int
         cache_clear();
     }
     logmsg("AI: $done deskripsi ditulis.");
-    return $done;
+    return $done + $articles;
 }
 
 /** Jalankan untuk semua situs (atau satu situs: id atau domain). */
@@ -156,4 +162,36 @@ function run_fetch_all(?string $only = null, bool $enrich = false): void
         @ob_flush();
         flush();
     }
+}
+
+/**
+ * Antrian tulis cepat: ubah item "queued" menjadi draf artikel lengkap dalam bahasa situs.
+ * @return int jumlah artikel yang berhasil dibuat
+ */
+function process_article_queue(int $max): int
+{
+    $done = 0;
+    $items = q("SELECT id, brief, notes, keyword FROM articles WHERE status = 'queued' ORDER BY id LIMIT ?", [$max])->fetchAll();
+    foreach ($items as $it) {
+        try {
+            $kw = trim((string)$it['keyword']);
+            $titles = $kw !== '' ? array_column(videos_search($kw, 1, 15)[0], 'title') : [];
+            $a = AI::articleFull((string)$it['brief'], $kw, $titles, (string)$it['notes']);
+            $slug = slugify($a['title'], 90);
+            if ($slug === 'video') {
+                $slug = 'article-' . $it['id'];
+            }
+            if (q('SELECT 1 FROM articles WHERE slug = ? AND id != ?', [$slug, $it['id']])->fetchColumn()) {
+                $slug .= '-' . $it['id'];
+            }
+            q("UPDATE articles SET title = ?, slug = ?, excerpt = ?, body = ?, review_id = ?, status = 'draft', ai_error = NULL, updated_at = ? WHERE id = ?",
+                [$a['title'], $slug, mb_substr($a['excerpt'], 0, 300), $a['body'], $a['summary_id'], now(), $it['id']]);
+            logmsg('Tulis cepat: draf "' . $a['title'] . '" siap dicek');
+            $done++;
+        } catch (Throwable $e) {
+            q("UPDATE articles SET status = 'failed', ai_error = ?, updated_at = ? WHERE id = ?", [mb_substr($e->getMessage(), 0, 500), now(), $it['id']]);
+            logmsg('Tulis cepat gagal: ' . $e->getMessage());
+        }
+    }
+    return $done;
 }

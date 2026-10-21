@@ -314,7 +314,8 @@ function page_dashboard(): void
     <pre>7 * * * *    php <?= e(ROOT) ?>/cli/fetch.php > /dev/null 2>&amp;1
 */30 * * * * php <?= e(ROOT) ?>/cli/enrich.php > /dev/null 2>&amp;1</pre>
     <p class="help">Hosting tanpa menu Cron Jobs: panggil URL ini tiap jam dari layanan cron gratis (mis. cron-job.org):<br>
-      <code><?= e((request_is_https() ? 'https://' : 'http://') . request_host()) ?>/_cron/<?= e(cron_key()) ?></code></p>
+      <code><?= e((request_is_https() ? 'https://' : 'http://') . request_host()) ?>/_cron/<?= e(cron_key()) ?></code><br>
+      AI (deskripsi + antrian artikel), tiap 30 menit: <code><?= e((request_is_https() ? 'https://' : 'http://') . request_host()) ?>/_cron/<?= e(cron_key()) ?>?enrich=1</code></p>
 
     <h2>Log terakhir</h2>
     <pre class="log"><?= e(log_tail(40) ?: 'Belum ada log.') ?></pre>
@@ -391,6 +392,7 @@ function page_settings(): void
         $c['ai']['model'] = trim((string)post('ai.model'));
         $c['ai']['endpoint'] = trim((string)post('ai.endpoint'));
         $c['ai']['per_run'] = clamp_int(post('ai.per_run'), 1, 500, 30);
+        $c['ai']['articles_per_run'] = clamp_int(post('ai.articles_per_run'), 0, 20, 2);
 
         $c['legal']['name'] = trim((string)post('legal.name'));
         $c['legal']['address'] = trim((string)post('legal.address'));
@@ -461,6 +463,7 @@ function page_settings(): void
           <label>API key<input name="ai[api_key]" value="<?= e($c['ai']['api_key']) ?>" placeholder="(pakai global)"></label>
           <label>Endpoint <small>(khusus API kompatibel OpenAI)</small><input name="ai[endpoint]" value="<?= e($c['ai']['endpoint']) ?>"></label>
           <label>Deskripsi per jalan<input type="number" name="ai[per_run]" value="<?= (int)$c['ai']['per_run'] ?>" min="1"></label>
+          <label>Artikel antrian per jalan <small>(tiap 30 menit)</small><input type="number" name="ai[articles_per_run]" value="<?= (int)($c['ai']['articles_per_run'] ?? 2) ?>" min="0" max="20"></label>
         </div>
       </fieldset>
 
@@ -928,6 +931,9 @@ function page_global(): void
             $g['ai_model'] = trim((string)post('ai_model'));
             $g['ai_endpoint'] = trim((string)post('ai_endpoint'));
             gset('global', $g);
+            if (in_array((string)post('admin_tz'), DateTimeZone::listIdentifiers(), true)) {
+                gset('admin_tz', (string)post('admin_tz'));
+            }
             flash('Pengaturan global disimpan.');
         }
         redirect('/admin/global');
@@ -945,7 +951,12 @@ function page_global(): void
           <label>AI API key<input name="ai_api_key" value="<?= e($g['ai_api_key']) ?>"></label>
           <label>AI endpoint <small>(opsional)</small><input name="ai_endpoint" value="<?= e($g['ai_endpoint']) ?>"></label>
         </div>
-        <p class="help">Biaya API AI ditagih terpisah oleh penyedianya (tidak termasuk langganan chat). AI hanya berjalan di situs yang mengaktifkannya.</p>
+        <p class="help">Biaya API AI ditagih terpisah oleh penyedianya (tidak termasuk langganan chat). Deskripsi video AI hanya berjalan di situs yang mengaktifkannya; antrian artikel berjalan bila API key terisi.</p>
+        <label>Zona waktu admin <small>(untuk jadwal terbit artikel)</small><select name="admin_tz">
+          <?php foreach (['Asia/Jakarta' => 'WIB (Jakarta)', 'Asia/Makassar' => 'WITA (Makassar)', 'Asia/Jayapura' => 'WIT (Jayapura)', 'Europe/Berlin' => 'Jerman / Eropa Tengah', 'Europe/London' => 'Inggris', 'America/New_York' => 'AS Timur', 'America/Los_Angeles' => 'AS Barat', 'UTC' => 'UTC'] as $tz => $lbl): ?>
+            <option value="<?= e($tz) ?>" <?= admin_tz()->getName() === $tz ? 'selected' : '' ?>><?= e($lbl) ?></option>
+          <?php endforeach; ?>
+        </select></label>
       </fieldset>
       <button class="btn">Simpan</button>
     </form>
@@ -970,34 +981,150 @@ function page_global(): void
 
 function page_articles_admin(): void
 {
-    if (is_post() && post('act') === 'delete') {
-        q('DELETE FROM articles WHERE id = ?', [(int)post('id')]);
+    if (is_post()) {
+        $act = (string)post('act');
+        $ids = array_map('intval', (array)post('ids', []));
+        if ($act === 'delete' && post('id')) {
+            $ids = [(int)post('id')];
+        }
+        if ($act === 'queue') {
+            $notes = trim((string)post('notes'));
+            $n = 0;
+            foreach (preg_split('/\R/u', (string)post('topics')) ?: [] as $line) {
+                [$topic, $kw] = array_map('trim', array_pad(explode('|', $line, 2), 2, ''));
+                if ($topic === '') {
+                    continue;
+                }
+                q("INSERT INTO articles (slug, title, brief, notes, keyword, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 'queued', ?, ?)",
+                    ['antrian-' . random_token(6), mb_substr($topic, 0, 200), $topic, $notes, $kw, now(), now()]);
+                $n++;
+                if ($n >= 50) {
+                    break;
+                }
+            }
+            flash($n ? "$n topik masuk antrian. Diproses otomatis oleh cron (" . (int)cfg('ai.articles_per_run', 2) . ' artikel tiap 30 menit), atau klik "Proses 1 sekarang".' : 'Tidak ada topik.', $n ? 'ok' : 'err');
+            redirect('/admin/articles');
+        }
+        if ($act === 'process') {
+            @set_time_limit(180);
+            try {
+                $n = process_article_queue(1);
+                $err = $n ? '' : (string)q("SELECT ai_error FROM articles WHERE status = 'failed' ORDER BY updated_at DESC, id DESC LIMIT 1")->fetchColumn();
+                flash($n ? 'Satu draf selesai ditulis — cek di daftar di bawah.' : 'AI gagal: ' . ($err ?: 'antrian kosong'), $n ? 'ok' : 'err');
+            } catch (Throwable $e) {
+                flash('Gagal: ' . $e->getMessage(), 'err');
+            }
+            redirect('/admin/articles');
+        }
+        if (!$ids) {
+            flash('Centang minimal satu artikel.', 'err');
+            redirect('/admin/articles');
+        }
+        $in = implode(',', array_fill(0, count($ids), '?'));
+        switch ($act) {
+            case 'schedule':
+                $start = admin_to_utc((string)post('start'));
+                $gap = max(1, min(24 * 30, (int)post('gap', 24)));
+                if (!$start) {
+                    flash('Isi waktu mulai.', 'err');
+                    break;
+                }
+                $rows = q("SELECT id FROM articles WHERE id IN ($in) AND status IN ('draft', 'published') ORDER BY id", $ids)->fetchAll(PDO::FETCH_COLUMN);
+                $t = strtotime($start . ' UTC');
+                foreach ($rows as $k => $aid) {
+                    q("UPDATE articles SET status = 'published', published_at = ?, updated_at = ? WHERE id = ?",
+                        [gmdate('Y-m-d H:i:s', $t + $k * $gap * 3600), now(), $aid]);
+                }
+                flash(count($rows) . ' artikel dijadwalkan: mulai ' . utc_to_admin($start) . ', jeda ' . $gap . ' jam.');
+                break;
+            case 'publish':
+                $n = q("UPDATE articles SET status = 'published', published_at = ?, updated_at = ? WHERE id IN ($in) AND status IN ('draft', 'published')", [now(), now(), ...$ids])->rowCount();
+                flash("$n artikel diterbitkan sekarang.");
+                break;
+            case 'draft':
+                $n = q("UPDATE articles SET status = 'draft', updated_at = ? WHERE id IN ($in) AND status = 'published'", [now(), ...$ids])->rowCount();
+                flash("$n artikel dikembalikan ke draf.");
+                break;
+            case 'retry':
+                $n = q("UPDATE articles SET status = 'queued', ai_error = NULL WHERE id IN ($in) AND status = 'failed'", $ids)->rowCount();
+                flash("$n topik dimasukkan lagi ke antrian.");
+                break;
+            case 'delete':
+                $n = q("DELETE FROM articles WHERE id IN ($in)", $ids)->rowCount();
+                flash("$n artikel dihapus.");
+                break;
+        }
         cache_clear();
-        flash('Artikel dihapus.');
         redirect('/admin/articles');
     }
-    $rows = q('SELECT id, slug, title, status, published_at, updated_at, length(body) AS len FROM articles ORDER BY COALESCE(published_at, created_at) DESC')->fetchAll();
+
+    $rows = q("SELECT id, slug, title, status, published_at, updated_at, length(body) AS len, review_id, ai_error, brief FROM articles
+               ORDER BY CASE status WHEN 'failed' THEN 0 WHEN 'queued' THEN 1 WHEN 'draft' THEN 2 ELSE 3 END, COALESCE(published_at, created_at) DESC")->fetchAll();
+    $count = fn(string $st) => count(array_filter($rows, fn($r) => $r['status'] === $st));
+    $hasAi = trim((string)cfg('ai.api_key', '')) !== '' && trim((string)cfg('ai.model', '')) !== '';
     $base = rtrim((string)cfg('site.url'), '/');
+    $nextSlot = (new DateTime('tomorrow 08:00', admin_tz()))->format('Y-m-d\TH:i');
     ob_start(); ?>
-    <p><a class="btn" href="/admin/articles/edit">+ Tulis artikel</a></p>
-    <p class="help">Artikel orisinal adalah pembeda utama dari situs AGC biasa: AdSense, Mediavine, dan Raptive menilai keaslian konten.
-      Tulis panduan, daftar rekomendasi, urutan menonton, penjelasan ending, atau "cara nonton legal". Draf AI boleh dipakai sebagai awal, tapi <b>sunting dan tambah pendapat Anda sendiri</b> sebelum terbit.</p>
+    <div class="row"><a class="btn ghost" href="/admin/articles/edit">+ Tulis manual</a></div>
+
+    <fieldset><legend>⚡ Tulis cepat dengan AI (bahasa situs: <?= e(LANGS[site_lang()] ?? site_lang()) ?>)</legend>
+      <?php if (!$hasAi): ?><p class="msg err">Isi AI provider, model, dan API key di menu <a href="/admin/global">Global</a> dulu.</p><?php endif; ?>
+      <form method="post" class="form">
+        <?= csrf_field() ?><input type="hidden" name="act" value="queue">
+        <label><span>Topik — satu per baris, <b>boleh dalam bahasa Indonesia</b>. Opsional: <code>topik | kata kunci video</code></span>
+          <textarea name="topics" rows="6" placeholder="10 drama Korea balas dendam terbaik untuk pemula | revenge&#10;Urutan menonton serial X dari awal sampai akhir | X&#10;Rumus Excel yang paling sering dipakai di kantor | Excel"></textarea></label>
+        <label>Catatan gaya untuk semua topik <small>(opsional: sudut pandang, target pembaca, hal yang wajib dibahas)</small><input name="notes"></label>
+        <button class="btn" <?= $hasAi ? '' : 'disabled' ?>>Masukkan antrian</button>
+      </form>
+      <p class="help">AI menulis judul, meta description, dan isi dalam bahasa situs, ditambah <b>ringkasan bahasa Indonesia</b> untuk Anda cek. Hasilnya selalu disimpan sebagai <b>draf</b>, tidak pernah terbit otomatis.
+        Antrian: <b><?= $count('queued') ?></b> menunggu<?= $count('failed') ? ', <b class="danger">' . $count('failed') . '</b> gagal' : '' ?>.</p>
+      <?php if ($count('queued')): ?>
+        <form method="post"><?= csrf_field() ?><input type="hidden" name="act" value="process"><button class="btn ghost">Proses 1 sekarang</button></form>
+      <?php endif; ?>
+    </fieldset>
+
+    <h2>Semua artikel</h2>
     <?php if (!$rows): ?><p class="muted">Belum ada artikel.</p><?php else: ?>
-    <table class="tbl">
-      <tr><th>Judul</th><th>Status</th><th>Terbit</th><th>Panjang</th><th></th></tr>
-      <?php foreach ($rows as $r): ?>
-        <tr>
-          <td><a href="/admin/articles/edit?id=<?= (int)$r['id'] ?>"><b><?= e($r['title']) ?></b></a><br><small class="muted">/article/<?= e($r['slug']) ?></small></td>
-          <td><?= $r['status'] === 'published' ? (strtotime($r['published_at'] . ' UTC') > time() ? '⏰ terjadwal' : '✅ terbit') : '📝 draf' ?></td>
-          <td><?= e((string)$r['published_at']) ?></td>
-          <td><?= number_format((int)$r['len']) ?> karakter</td>
-          <td>
-            <?php if ($r['status'] === 'published'): ?><a class="link" href="<?= e($base) ?>/article/<?= e($r['slug']) ?>" target="_blank" rel="noopener">lihat</a> · <?php endif; ?>
-            <form method="post" class="inl"><?= csrf_field() ?><input type="hidden" name="act" value="delete"><input type="hidden" name="id" value="<?= (int)$r['id'] ?>"><button class="link danger" onclick="return confirm('Hapus artikel ini?')">hapus</button></form>
-          </td>
-        </tr>
-      <?php endforeach; ?>
-    </table>
+    <form method="post" id="bulk">
+      <?= csrf_field() ?>
+      <table class="tbl">
+        <tr><th><input type="checkbox" onclick="document.querySelectorAll('.pick').forEach(c => c.checked = this.checked)"></th><th>Judul</th><th>Status</th><th>Terbit (<?= e(admin_tz()->getName()) ?>)</th><th></th></tr>
+        <?php foreach ($rows as $r):
+            $future = $r['status'] === 'published' && strtotime($r['published_at'] . ' UTC') > time();
+            $label = ['queued' => '⏳ antrian AI', 'failed' => '❌ gagal', 'draft' => '📝 draf', 'published' => $future ? '⏰ terjadwal' : '✅ terbit'][$r['status']] ?? $r['status']; ?>
+          <tr>
+            <td><input type="checkbox" class="pick" name="ids[]" value="<?= (int)$r['id'] ?>"></td>
+            <td>
+              <?php if (in_array($r['status'], ['queued', 'failed'], true)): ?>
+                <b><?= e(excerpt((string)$r['brief'], 120)) ?></b>
+                <?php if ($r['ai_error']): ?><br><small class="danger"><?= e($r['ai_error']) ?></small><?php endif; ?>
+              <?php else: ?>
+                <a href="/admin/articles/edit?id=<?= (int)$r['id'] ?>"><b><?= e($r['title']) ?></b></a>
+                <?php if ($r['review_id']): ?><br><small class="muted">🇮🇩 <?= e(excerpt((string)$r['review_id'], 160)) ?></small><?php endif; ?>
+              <?php endif; ?>
+            </td>
+            <td><?= $label ?></td>
+            <td><?= e(utc_to_admin($r['published_at'])) ?></td>
+            <td><?php if ($r['status'] === 'published' && !$future): ?><a class="link" href="<?= e($base) ?>/article/<?= e($r['slug']) ?>" target="_blank" rel="noopener">lihat</a><?php endif; ?></td>
+          </tr>
+        <?php endforeach; ?>
+      </table>
+      <fieldset style="margin-top:12px"><legend>Aksi untuk yang dicentang</legend>
+        <div class="grid3">
+          <label>Aksi<select name="act" id="bulkact">
+            <option value="schedule">Jadwalkan berurutan</option>
+            <option value="publish">Terbitkan sekarang</option>
+            <option value="draft">Kembalikan ke draf</option>
+            <option value="retry">Ulangi topik yang gagal</option>
+            <option value="delete">Hapus</option>
+          </select></label>
+          <label>Mulai (<?= e(admin_tz()->getName()) ?>)<input type="datetime-local" name="start" value="<?= e($nextSlot) ?>"></label>
+          <label>Jeda antar artikel (jam)<input type="number" name="gap" value="24" min="1"></label>
+        </div>
+        <p class="help">Contoh: 7 draf, mulai besok 08:00, jeda 24 jam → terbit 1 artikel per hari selama seminggu. Artikel terjadwal otomatis muncul di situs, sitemap, dan Telegram tepat waktunya (tanpa cron tambahan).</p>
+        <button class="btn" onclick="return document.getElementById('bulkact').value !== 'delete' || confirm('Hapus artikel yang dicentang?')">Jalankan</button>
+      </fieldset>
+    </form>
     <?php endif;
     echo admin_layout('Artikel', (string)ob_get_clean());
 }
@@ -1010,13 +1137,21 @@ function page_article_edit(): void
         'title' => (string)($a['title'] ?? ''), 'slug' => (string)($a['slug'] ?? ''), 'excerpt' => (string)($a['excerpt'] ?? ''),
         'body' => (string)($a['body'] ?? ''), 'cover' => (string)($a['cover'] ?? ''), 'keyword' => (string)($a['keyword'] ?? ''),
         'status' => (string)($a['status'] ?? 'draft'),
-        'published_at' => (string)($a['published_at'] ?? ''), 'notes' => '',
+        'published_at' => utc_to_admin($a['published_at'] ?? null), 'notes' => '',
     ];
+    $translation = '';
     if (is_post()) {
         foreach (['title', 'slug', 'excerpt', 'body', 'cover', 'keyword', 'status', 'published_at', 'notes'] as $k) {
             $form[$k] = trim(str_replace("\r", '', (string)post($k)));
         }
-        if (post('act') === 'ai') {
+        if (post('act') === 'translate') {
+            @set_time_limit(180);
+            try {
+                $translation = AI::toIndonesian("# {$form['title']}\n\n{$form['excerpt']}\n\n{$form['body']}");
+            } catch (Throwable $e) {
+                flash('Terjemahan gagal: ' . $e->getMessage(), 'err');
+            }
+        } elseif (post('act') === 'ai') {
             try {
                 if ($form['title'] === '') {
                     throw new RuntimeException('Isi judul dulu.');
@@ -1041,7 +1176,7 @@ function page_article_edit(): void
                     $slug .= '-' . substr(md5((string)microtime(true)), 0, 4);
                 }
                 $status = $form['status'] === 'published' ? 'published' : 'draft';
-                $pub = $form['published_at'] !== '' && strtotime($form['published_at']) ? gmdate('Y-m-d H:i:s', (int)strtotime($form['published_at'] . ' UTC')) : null;
+                $pub = admin_to_utc($form['published_at']);
                 if ($status === 'published' && !$pub) {
                     $pub = now();
                 }
@@ -1055,7 +1190,7 @@ function page_article_edit(): void
                     $id = (int)db()->lastInsertId();
                 }
                 cache_clear();
-                flash($status === 'published' ? 'Artikel diterbitkan.' : 'Draf disimpan.');
+                flash($status !== 'published' ? 'Draf disimpan.' : (strtotime($pub . ' UTC') > time() ? 'Artikel dijadwalkan terbit ' . utc_to_admin($pub) . '.' : 'Artikel diterbitkan.'));
                 redirect('/admin/articles/edit?id=' . $id);
             } catch (Throwable $e) {
                 flash($e->getMessage(), 'err');
@@ -1064,7 +1199,7 @@ function page_article_edit(): void
     }
     $base = rtrim((string)cfg('site.url'), '/');
     ob_start(); ?>
-    <p><a href="/admin/articles">← Semua artikel</a><?php if ($a && $a['status'] === 'published'): ?> · <a href="<?= e($base) ?>/article/<?= e($a['slug']) ?>" target="_blank" rel="noopener">Lihat di situs ↗</a><?php endif; ?></p>
+    <p><a href="/admin/articles">← Semua artikel</a><?php if ($a && $a['status'] === 'published' && strtotime((string)$a['published_at'] . ' UTC') <= time()): ?> · <a href="<?= e($base) ?>/article/<?= e($a['slug']) ?>" target="_blank" rel="noopener">Lihat di situs ↗</a><?php endif; ?></p>
     <form method="post" class="form">
       <?= csrf_field() ?><input type="hidden" name="id" value="<?= (int)$id ?>">
       <label>Judul<input name="title" value="<?= e($form['title']) ?>" required placeholder="mis. 10 Drama Korea Balas Dendam Terbaik untuk Ditonton"></label>
@@ -1078,9 +1213,16 @@ function page_article_edit(): void
       <div class="grid3">
         <label>Gambar sampul (URL https, opsional)<input name="cover" value="<?= e($form['cover']) ?>"></label>
         <label>Status<select name="status"><option value="draft">Draf</option><option value="published" <?= $form['status'] === 'published' ? 'selected' : '' ?>>Terbitkan</option></select></label>
-        <label>Tanggal terbit (UTC, kosong = sekarang)<input type="datetime-local" name="published_at" value="<?= e($form['published_at'] ? str_replace(' ', 'T', substr($form['published_at'], 0, 16)) : '') ?>"></label>
+        <label>Tanggal terbit (<?= e(admin_tz()->getName()) ?>; kosong = sekarang, masa depan = terjadwal)<input type="datetime-local" name="published_at" value="<?= e($form['published_at'] ? str_replace(' ', 'T', substr($form['published_at'], 0, 16)) : '') ?>"></label>
       </div>
-      <div class="row"><button class="btn">Simpan</button></div>
+      <?php if (!empty($a['review_id']) || $translation !== ''): ?>
+      <fieldset class="review"><legend>🇮🇩 Cek isi dalam bahasa Indonesia <small>(hanya untuk Anda, tidak tampil di situs)</small></legend>
+        <?php if ($translation !== ''): ?><div style="white-space:pre-wrap;max-height:480px;overflow:auto"><?= e($translation) ?></div>
+        <?php else: ?><p><?= nl2br(e((string)$a['review_id'])) ?></p><?php endif; ?>
+      </fieldset>
+      <?php endif; ?>
+      <div class="row"><button class="btn">Simpan</button>
+        <?php if (site_lang() !== 'id' && $form['body'] !== ''): ?><button class="btn ghost" name="act" value="translate" formnovalidate>Terjemahkan ke Indonesia (cek isi)</button><?php endif; ?></div>
       <fieldset><legend>Bantuan AI (opsional)</legend>
         <label>Catatan untuk AI <small>(sudut pandang, poin wajib, gaya bahasa)</small><textarea name="notes" rows="2"><?= e($form['notes']) ?></textarea></label>
         <button class="btn ghost" name="act" value="ai" onclick="return !this.form.body.value || confirm('Isi artikel akan diganti dengan draf AI. Lanjutkan?')">Buat draf dengan AI</button>

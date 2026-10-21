@@ -52,6 +52,16 @@ function db_migrate(PDO $pdo): void
         PRAGMA user_version = 2;
         SQL);
     }
+    if ($version < 3) {
+        // v3: antrian tulis cepat AI
+        $pdo->exec(<<<SQL
+        ALTER TABLE articles ADD COLUMN brief TEXT;
+        ALTER TABLE articles ADD COLUMN notes TEXT;
+        ALTER TABLE articles ADD COLUMN review_id TEXT;
+        ALTER TABLE articles ADD COLUMN ai_error TEXT;
+        PRAGMA user_version = 3;
+        SQL);
+    }
 }
 
 function db_migrate_v1(PDO $pdo): void

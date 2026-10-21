@@ -4,6 +4,9 @@ declare(strict_types=1);
 /** Pembuat deskripsi unik (opsional). Mendukung Anthropic & semua API OpenAI-compatible. */
 final class AI
 {
+    /** Untuk pengujian: fungsi pengganti panggilan API (prompt => teks). */
+    public static ?Closure $fake = null;
+
     public static function describe(string $type, string $title, string $description, string $channel): string
     {
         $lang = [
@@ -68,6 +71,61 @@ final class AI
         return trim(self::complete($prompt, 2500));
     }
 
+    /**
+     * Tulis cepat: topik (boleh bahasa Indonesia) → artikel lengkap dalam bahasa situs.
+     * @return array{title:string, excerpt:string, summary_id:string, body:string}
+     */
+    public static function articleFull(string $topic, string $keyword, array $videoTitles, string $notes): array
+    {
+        $lang = self::language();
+        $niche = trim((string)cfg('site.niche', '')) ?: t('_niche');
+        $list = implode("\n", array_map(fn($t) => '- ' . $t, array_slice($videoTitles, 0, 15))) ?: '(none)';
+        $prompt = <<<P
+        You write for a website about $niche. Write ONE original, genuinely helpful blog article in $lang.
+        The editor described the topic (possibly in Indonesian; translate the idea, do not copy Indonesian words):
+        "$topic"
+        Main keyword (use naturally): $keyword
+        Videos available on the site that you may mention by their exact titles:
+        $list
+        Extra notes from the editor: $notes
+
+        Rules:
+        - 700 to 1000 words, Markdown body: "## " section headings, short paragraphs, bullet lists where useful.
+        - Explain, compare, give tips or a watching/learning order. Natural tone, no keyword stuffing.
+        - Do NOT invent facts (release dates, cast, numbers, awards, prices). If unsure, stay general.
+        - No links, no emojis, no "click here", no calls to install apps.
+
+        Answer EXACTLY in this format:
+        TITLE: <catchy, accurate title in $lang, max 70 characters>
+        EXCERPT: <meta description in $lang, max 155 characters>
+        SUMMARY_ID: <3-5 sentences in Indonesian summarising what the article says, for the editor to review>
+        ---
+        <article body in Markdown, in $lang, without repeating the title>
+        P;
+        $raw = str_replace("\r", '', trim(self::complete($prompt, 3000)));
+        $out = ['title' => '', 'excerpt' => '', 'summary_id' => '', 'body' => ''];
+        $parts = preg_split('/^\s*---\s*$/m', $raw, 2) ?: [$raw];
+        $head = $parts[0];
+        $out['body'] = trim($parts[1] ?? '');
+        foreach (['title' => 'TITLE', 'excerpt' => 'EXCERPT', 'summary_id' => 'SUMMARY_ID'] as $k => $label) {
+            if (preg_match('/^\s*' . $label . ':\s*(.+?)\s*(?=^\s*(?:TITLE|EXCERPT|SUMMARY_ID):|\z)/ms', $head, $m)) {
+                $out[$k] = trim((string)preg_replace('/\s+/u', ' ', $m[1]), " \"'*");
+            }
+        }
+        if ($out['body'] === '' || $out['title'] === '') {
+            throw new RuntimeException('format jawaban AI tidak sesuai, coba lagi');
+        }
+        return $out;
+    }
+
+    /** Terjemahkan teks ke bahasa Indonesia agar editor bisa mengecek isi artikel berbahasa asing. */
+    public static function toIndonesian(string $text): string
+    {
+        $text = mb_substr($text, 0, 12000);
+        $prompt = "Translate the following Markdown article into natural Indonesian. Keep the Markdown structure. Output only the translation.\n\n" . $text;
+        return trim(self::complete($prompt, 3500));
+    }
+
     private static function language(): string
     {
         $lang = [
@@ -81,6 +139,9 @@ final class AI
 
     private static function complete(string $prompt, int $maxTokens = 700): string
     {
+        if (self::$fake) {
+            return (string)(self::$fake)($prompt);
+        }
         $key = (string)cfg('ai.api_key', '');
         $model = (string)cfg('ai.model', '');
         if ($key === '' || $model === '') {
@@ -104,7 +165,7 @@ final class AI
         curl_setopt_array($ch, [
             CURLOPT_POST           => true,
             CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_TIMEOUT        => 90,
+            CURLOPT_TIMEOUT        => 150,
             CURLOPT_HTTPHEADER     => [...$headers, 'Content-Type: application/json'],
             CURLOPT_POSTFIELDS     => json_encode($body),
         ]);

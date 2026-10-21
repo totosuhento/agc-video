@@ -260,7 +260,7 @@ function default_config(): array
             'min_duration' => 120, 'initial_pages' => 20, 'pages_per_run' => 2, 'series_per_run' => 20,
             'playlist_refresh_hours' => 24, 'refresh_per_run' => 1000, 'daily_quota' => 9000,
         ],
-        'ai' => ['enabled' => false, 'provider' => '', 'api_key' => '', 'model' => '', 'endpoint' => '', 'per_run' => 30],
+        'ai' => ['enabled' => false, 'provider' => '', 'api_key' => '', 'model' => '', 'endpoint' => '', 'per_run' => 30, 'articles_per_run' => 2],
         'ads' => [
             'mode' => 'adsense',          // adsense | network | custom
             'adsense_client' => '',       // ca-pub-xxxxxxxxxxxxxxxx
@@ -407,4 +407,43 @@ function hreflang_links(string $path, ?string $videoId = null): array
         }
     }
     return $links;
+}
+
+/* ---------- Zona waktu admin (default WIB) ---------- */
+
+function admin_tz(): DateTimeZone
+{
+    try {
+        return new DateTimeZone((string)gget('admin_tz', 'Asia/Jakarta'));
+    } catch (Throwable) {
+        return new DateTimeZone('Asia/Jakarta');
+    }
+}
+
+/** "2026-10-22T08:00" (waktu admin) → "2026-10-22 01:00:00" (UTC) */
+function admin_to_utc(string $local): ?string
+{
+    $local = trim($local);
+    if ($local === '') {
+        return null;
+    }
+    try {
+        $d = new DateTime(str_replace('T', ' ', $local), admin_tz());
+        return $d->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d H:i:s');
+    } catch (Throwable) {
+        return null;
+    }
+}
+
+/** UTC → waktu admin, format tampil / input */
+function utc_to_admin(?string $utc, string $format = 'Y-m-d H:i'): string
+{
+    if (!$utc) {
+        return '';
+    }
+    try {
+        return (new DateTime($utc, new DateTimeZone('UTC')))->setTimezone(admin_tz())->format($format);
+    } catch (Throwable) {
+        return '';
+    }
 }

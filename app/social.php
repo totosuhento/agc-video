@@ -77,7 +77,7 @@ function social_autopost(): void
     $sent = 0;
     try {
         $arts = q("SELECT id, slug, title, excerpt, cover FROM articles WHERE status = 'published' AND posted_at IS NULL
-                   AND published_at >= ? ORDER BY published_at ASC LIMIT ?", [$since, $limit])->fetchAll();
+                   AND published_at >= ? AND published_at <= ? ORDER BY published_at ASC LIMIT ?", [$since, now(), $limit])->fetchAll();
         foreach ($arts as $a) {
             $link = url('article/' . $a['slug']);
             telegram_api('sendMessage', ['chat_id' => $chat, 'parse_mode' => 'HTML',

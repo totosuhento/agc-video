@@ -314,7 +314,7 @@ class Sources
         curl_setopt_array($ch, [
             CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 30, CURLOPT_CONNECTTIMEOUT => 10,
             CURLOPT_FOLLOWLOCATION => true, CURLOPT_MAXREDIRS => 3, CURLOPT_ENCODING => '',
-            CURLOPT_USERAGENT => 'AGC-Video/' . AGC_VERSION . ' (+' . cfg('site.url') . ')',
+            CURLOPT_USERAGENT => 'Nexora-Content-Engine/' . AGC_VERSION . ' (+' . cfg('site.url') . ')',
         ]);
         $body = curl_exec($ch);
         $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);

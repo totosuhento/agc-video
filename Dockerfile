@@ -1,4 +1,4 @@
-# AGC Video — image Docker (Nusapod, VPS dengan Docker, hosting container lain)
+# Nexora Content Engine — image Docker (Nusapod, VPS dengan Docker, hosting container lain)
 FROM php:8.3-apache
 
 # Apache: rewrite untuk URL cantik; opcache untuk kecepatan.

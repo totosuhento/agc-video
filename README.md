@@ -1,4 +1,6 @@
-# AGC Video
+# Nexora Content Engine
+
+**Create More. Scale Faster.**
 
 Mesin AGC (Auto Generated Content) **video universal**: satu script untuk banyak situs video dengan niche, bahasa, dan iklan berbeda.
 Video diambil otomatis dari **sumber resmi / legal** dan diputar dengan **player resmi platformnya** (tidak ada video yang di-download/di-host):

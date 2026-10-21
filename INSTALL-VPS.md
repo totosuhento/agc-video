@@ -1,4 +1,4 @@
-# Pasang AGC Video di VPS
+# Pasang Nexora Content Engine di VPS
 
 Dua pilihan. **A (Docker + Caddy)** paling mudah: SSL otomatis untuk semua domain dan update satu perintah.
 **B (Nginx + PHP)** cocok untuk VPS kecil tanpa Docker. VPS Ubuntu 22.04/24.04 atau Debian 12, RAM 1 GB cukup untuk beberapa situs.
@@ -37,8 +37,8 @@ Lalu buka `https://domain-anda/install`.
 
 ```bash
 apt update && apt install -y nginx php-fpm php-sqlite3 php-curl php-mbstring php-intl unzip
-unzip agc-video.zip -d /var/www/
-chown -R www-data:www-data /var/www/agc-video/storage
+unzip nexora-content-engine.zip -d /var/www/
+chown -R www-data:www-data /var/www/nexora/storage
 ```
 
 `/etc/nginx/sites-available/agc` (satu blok untuk SEMUA domain situs; ganti versi PHP sesuai `ls /run/php/`):
@@ -47,7 +47,7 @@ chown -R www-data:www-data /var/www/agc-video/storage
 server {
     listen 80;
     server_name domain-satu.com www.domain-satu.com domain-dua.com www.domain-dua.com;
-    root /var/www/agc-video/public;
+    root /var/www/nexora/public;
     index index.php;
     location / { try_files $uri /index.php$is_args$args; }
     location ~ \.php$ {
@@ -70,8 +70,8 @@ certbot --nginx -d domain-satu.com -d www.domain-satu.com -d domain-dua.com -d w
 Cron (`crontab -u www-data -e`):
 
 ```
-7 * * * *    php /var/www/agc-video/cli/fetch.php > /dev/null 2>&1
-*/30 * * * * php /var/www/agc-video/cli/enrich.php > /dev/null 2>&1
+7 * * * *    php /var/www/nexora/cli/fetch.php > /dev/null 2>&1
+*/30 * * * * php /var/www/nexora/cli/enrich.php > /dev/null 2>&1
 ```
 
 Buka `https://domain-satu.com/install`.

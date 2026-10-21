@@ -1,4 +1,4 @@
-# Pasang AGC Video di shared hosting (cPanel)
+# Pasang Nexora Content Engine di shared hosting (cPanel)
 
 ## Syarat hosting
 
@@ -11,22 +11,22 @@ Halaman `/install` otomatis memeriksa syarat-syarat ini.
 
 ## Langkah
 
-1. **Upload** `agc-video.zip` lewat *File Manager* ke folder di luar `public_html`, mis. `/home/USER/agc-video`, lalu **Extract**.
+1. **Upload** `nexora-content-engine.zip` lewat *File Manager* ke folder di luar `public_html`, mis. `/home/USER/nexora`, lalu **Extract**.
 2. **Arahkan domain**:
-   - **Addon domain / subdomain** (disarankan): saat menambah domain, isi *Document Root* = `agc-video/public`.
+   - **Addon domain / subdomain** (disarankan): saat menambah domain, isi *Document Root* = `nexora/public`.
    - **Domain utama** (document root tidak bisa diubah): extract langsung ke `public_html`. File `.htaccess` dan `index.php` di folder utama sudah menangani routing dan memblokir folder `app/`, `cli/`, `storage/`.
 3. Pastikan folder `storage` bisa ditulis (permission 755/775; bila perlu 777).
 4. Buka `https://domain-anda/install` → buat password admin → buat situs → tambah channel → **Ambil video sekarang**.
 5. **Cron Jobs** (cPanel → Cron Jobs, *Once Per Hour*):
    ```
-   php /home/USER/agc-video/cli/fetch.php > /dev/null 2>&1
+   php /home/USER/nexora/cli/fetch.php > /dev/null 2>&1
    ```
-   Opsional AI tiap 30 menit: `php /home/USER/agc-video/cli/enrich.php > /dev/null 2>&1`
+   Opsional AI tiap 30 menit: `php /home/USER/nexora/cli/enrich.php > /dev/null 2>&1`
    Path persis ditampilkan di Dashboard admin.
 
 ## Situs kedua dan seterusnya
 
-Tambahkan *Addon Domain* baru dengan **document root yang sama** (`agc-video/public`), lalu Admin → **Situs** → **+ Tambah situs baru**.
+Tambahkan *Addon Domain* baru dengan **document root yang sama** (`nexora/public`), lalu Admin → **Situs** → **+ Tambah situs baru**.
 Satu instalasi dan satu cron melayani semua situs.
 
 ## Hosting tanpa Cron Jobs

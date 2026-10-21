@@ -1,4 +1,4 @@
-# Pasang AGC Video di Docker / Nusapod
+# Pasang Nexora Content Engine di Docker / Nusapod
 
 Image siap pakai dibuat otomatis oleh GitHub Actions dan diuji sebelum dipublikasikan:
 

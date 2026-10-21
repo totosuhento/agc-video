@@ -1,4 +1,4 @@
-# AGC Video di VPS dengan Docker + Caddy (SSL otomatis untuk semua domain).
+# Nexora Content Engine di VPS dengan Docker + Caddy (SSL otomatis untuk semua domain).
 # 1) Ganti domain di file Caddyfile   2) docker compose up -d   3) buka https://domain-anda/install
 services:
   agc:

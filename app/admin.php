@@ -235,7 +235,7 @@ function page_install(): void
         <button class="btn">Install</button>
       </form>
     <?php endif;
-    echo admin_layout('Instalasi AGC Video', (string)ob_get_clean(), false);
+    echo admin_layout('Instalasi Nexora Content Engine', (string)ob_get_clean(), false);
 }
 
 function page_login(): void
@@ -1047,7 +1047,7 @@ function page_global(): void
       </fieldset>
       <button class="btn ghost">Ganti password</button>
     </form>
-    <p class="muted">AGC Video <?= AGC_VERSION ?> · PHP <?= PHP_VERSION ?> · data: <?= e(STORAGE) ?></p>
+    <p class="muted">Nexora Content Engine <?= AGC_VERSION ?> — Create More. Scale Faster. · PHP <?= PHP_VERSION ?> · data: <?= e(STORAGE) ?></p>
     <?php
     if (isset($_SESSION['site'])) {
         admin_site();
@@ -1428,7 +1428,7 @@ function admin_layout(string $title, string $body, bool $nav = true): string
         '/admin/ads' => 'Iklan', '/admin/social' => 'Sosial', '/admin/sites' => 'Situs', '/admin/global' => 'Global'];
     ob_start(); ?><!doctype html>
 <html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="robots" content="noindex, nofollow"><title><?= e($title) ?> · AGC Video</title>
+<meta name="robots" content="noindex, nofollow"><title><?= e($title) ?> · Nexora Content Engine</title>
 <style>
 :root{--bg:#f5f6fa;--card:#fff;--line:#e3e6ee;--text:#18203a;--muted:#667089;--accent:#1f5eff;--err:#c62828;--ok:#0a7f4f}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.55 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
@@ -1460,7 +1460,7 @@ details summary{cursor:pointer}.host{display:flex;gap:6px;align-items:center}
 @media(max-width:640px){header .right{margin-left:0}.tbl{display:block;overflow-x:auto}}
 </style></head><body>
 <header><div class="wrap">
-  <a class="brand" href="/admin">▶ AGC Video</a>
+  <a class="brand" href="/admin" title="Create More. Scale Faster.">▶ Nexora</a>
   <?php if ($nav && admin_logged_in()): ?>
   <nav><?php foreach ($links as $href => $label): ?><a href="<?= $href ?>" class="<?= $path === $href ? 'on' : '' ?>"><?= $label ?></a><?php endforeach; ?></nav>
   <div class="right">

@@ -7,7 +7,7 @@ define('AGC_VERSION', '1.0.0');
 
 if (PHP_VERSION_ID < 80100) {
     http_response_code(500);
-    exit('AGC Video membutuhkan PHP 8.1 atau lebih baru (versi server: ' . PHP_VERSION . ").\n");
+    exit('Nexora Content Engine membutuhkan PHP 8.1 atau lebih baru (versi server: ' . PHP_VERSION . ").\n");
 }
 
 mb_internal_encoding('UTF-8');

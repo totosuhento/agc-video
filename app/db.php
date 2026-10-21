@@ -69,6 +69,17 @@ function db_migrate(PDO $pdo): void
         PRAGMA user_version = 4;
         SQL);
     }
+    if ($version < 5) {
+        // v5: penawaran (CTA) per artikel
+        $pdo->exec(<<<SQL
+        ALTER TABLE articles ADD COLUMN cta_title TEXT;
+        ALTER TABLE articles ADD COLUMN cta_text TEXT;
+        ALTER TABLE articles ADD COLUMN cta_url TEXT;
+        ALTER TABLE articles ADD COLUMN cta_note TEXT;
+        ALTER TABLE articles ADD COLUMN cta_off INTEGER DEFAULT 0;
+        PRAGMA user_version = 5;
+        SQL);
+    }
 }
 
 function db_migrate_v1(PDO $pdo): void

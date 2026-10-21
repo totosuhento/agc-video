@@ -476,14 +476,15 @@ function site_uses_other_sources(): bool
  * daftar "- " dan "1. ", kutipan "> ", serta baris khusus [video:slug-video] untuk menyisipkan kartu video.
  * Slot iklan "in_article" otomatis disisipkan setelah paragraf ke-2.
  */
-function md_render(string $md): string
+function md_render(string $md, string $midHtml = '', bool $leftoverAtEnd = true): string
 {
     $md = str_replace("\r", '', trim($md));
     $blocks = preg_split("/\n{2,}/", $md) ?: [];
     $html = '';
     $paras = 0;
-    foreach ($blocks as $b) {
-        $b = trim($b);
+    $blocks = array_values(array_filter(array_map('trim', $blocks), fn($b) => $b !== ''));
+    $total = count($blocks);
+    foreach ($blocks as $i => $b) {
         if ($b === '') {
             continue;
         }
@@ -514,8 +515,44 @@ function md_render(string $md): string
         if (++$paras === 2) {
             $html .= ad('in_article');
         }
+        // CTA tengah: setelah paragraf ke-4, asal masih ada isi setelahnya (bukan menempel di akhir)
+        if ($paras >= 4 && $midHtml !== '' && $total - $i - 1 >= 3) {
+            $html .= $midHtml;
+            $midHtml = '';
+        }
     }
-    return $html;
+    return $leftoverAtEnd ? $html . $midHtml : $html;   // artikel pendek: CTA tengah pindah ke akhir
+}
+
+/**
+ * Penawaran (CTA) untuk sebuah artikel: pakai isian artikel itu, atau default situs (menu Iklan).
+ * @return array{html:string, pos:string}
+ */
+function article_cta(array $a): array
+{
+    if (!empty($a['cta_off'])) {
+        return ['html' => '', 'pos' => ''];
+    }
+    if (ads_mode() === 'adsense' && !cfg('ads.acta_in_adsense')) {
+        return ['html' => '', 'pos' => ''];
+    }
+    $own = trim((string)($a['cta_url'] ?? '')) !== '';
+    if (!$own && !cfg('ads.acta_enabled')) {
+        return ['html' => '', 'pos' => ''];
+    }
+    $pick = fn(string $k) => trim((string)($own ? ($a['cta_' . $k] ?? '') : cfg('ads.acta_' . $k, '')));
+    $url = $pick('url');
+    if (!preg_match('~^https?://\S+$~i', $url)) {
+        return ['html' => '', 'pos' => ''];
+    }
+    $title = $pick('title');
+    $note = $pick('note');
+    $html = '<aside class="cta cta-article"><span class="ad-label">' . e(t('sponsored')) . '</span>'
+        . ($title !== '' ? '<p class="cta-title">' . e($title) . '</p>' : '')
+        . '<a class="cta-btn" href="' . e($url) . '" target="_blank" rel="sponsored nofollow noopener">' . e($pick('text') ?: t('cta_default')) . '</a>'
+        . ($note !== '' ? '<p class="cta-note">' . e($note) . '</p>' : '') . '</aside>';
+    $pos = (string)cfg('ads.acta_pos', 'both');
+    return ['html' => $html, 'pos' => in_array($pos, ['middle', 'end', 'both'], true) ? $pos : 'both'];
 }
 
 function md_inline(string $s): string

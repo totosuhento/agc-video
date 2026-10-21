@@ -5,7 +5,9 @@
   <p class="meta"><?= e(t('published', fmt_date($a['published_at']))) ?></p>
   <?php if (!empty($a['cover'])): ?><img class="post-cover" src="<?= e($a['cover']) ?>" alt="<?= e($a['title']) ?>" width="1200" height="675"><?php endif; ?>
   <?php if (!empty($a['excerpt'])): ?><p class="post-lead"><?= e($a['excerpt']) ?></p><?php endif; ?>
-  <div class="post-body"><?= md_render((string)$a['body']) ?></div>
+  <?php $cta = article_cta($a); ?>
+  <div class="post-body"><?= md_render((string)$a['body'], in_array($cta['pos'], ['middle', 'both'], true) ? $cta['html'] : '', $cta['pos'] === 'middle') ?></div>
+  <?php if (in_array($cta['pos'], ['end', 'both'], true)) echo $cta['html']; ?>
   <?= share_buttons(url('article/' . $a['slug']), $a['title'], $image) ?>
 </article>
 

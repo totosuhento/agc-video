@@ -270,6 +270,10 @@ function default_config(): array
             'head' => '', 'top' => '', 'below_player' => '', 'in_list' => '', 'in_article' => '', 'sidebar' => '', 'footer' => '',
             'body_end' => '',             // popunder / social bar / smartlink (khusus mode network/custom)
             'cta_enabled' => false, 'cta_text' => '', 'cta_note' => '', 'cta_url' => '',
+            // CTA artikel default (bisa ditimpa per artikel)
+            'acta_enabled' => false, 'acta_title' => '', 'acta_text' => '', 'acta_url' => '', 'acta_note' => '',
+            'acta_pos' => 'both',         // middle | end | both
+            'acta_in_adsense' => false,   // izinkan di mode AdSense (hanya untuk afiliasi produk resmi)
             'ads_txt' => '',
         ],
         'sources' => [],                  // sumber selain YouTube: [{type, value}]

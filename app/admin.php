@@ -803,6 +803,14 @@ function page_ads(): void
         $c['ads']['cta_note'] = trim((string)post('ads.cta_note'));
         $cta = trim((string)post('ads.cta_url'));
         $c['ads']['cta_url'] = preg_match('~^https?://\S+$~i', $cta) ? $cta : '';
+        $c['ads']['acta_enabled'] = (bool)post('ads.acta_enabled', false);
+        $c['ads']['acta_in_adsense'] = (bool)post('ads.acta_in_adsense', false);
+        foreach (['title', 'text', 'note'] as $k) {
+            $c['ads']['acta_' . $k] = trim((string)post('ads.acta_' . $k));
+        }
+        $acta = trim((string)post('ads.acta_url'));
+        $c['ads']['acta_url'] = preg_match('~^https?://\S+$~i', $acta) ? $acta : '';
+        $c['ads']['acta_pos'] = in_array(post('ads.acta_pos'), ['middle', 'end', 'both'], true) ? (string)post('ads.acta_pos') : 'both';
         $c['ads']['ads_txt'] = trim(str_replace("\r", '', (string)post('ads.ads_txt')));
         $site->save($c);
         cache_clear();
@@ -845,6 +853,26 @@ function page_ads(): void
           <label>URL offer<input name="ads[cta_url]" value="<?= e($a['cta_url']) ?>" placeholder="https://..."></label>
         </div>
         <label>Keterangan kecil di bawah tombol <small>(opsional; tulis jujur apa yang didapat pengunjung)</small><input name="ads[cta_note]" value="<?= e($a['cta_note']) ?>"></label>
+      </fieldset>
+
+      <fieldset id="acta"><legend>Penawaran di artikel (CTA artikel)</legend>
+        <p class="help">Kotak rekomendasi di dalam artikel: cocok untuk trial software, kursus, VPN, atau produk afiliasi yang sesuai topik.
+          Ini <b>default</b> untuk semua artikel; setiap artikel bisa memakai penawarannya sendiri di editor artikel (lebih relevan = konversi lebih tinggi).
+          Selalu berlabel "<?= e(t('sponsored')) ?>" dan rel="sponsored".</p>
+        <label class="check"><input type="checkbox" name="ads[acta_enabled]" value="1" <?= !empty($a['acta_enabled']) ? 'checked' : '' ?>> Tampilkan penawaran default di semua artikel</label>
+        <div class="grid2">
+          <label>Judul kecil <small>(opsional, mis. "Unsere Empfehlung: Excel-Kurs")</small><input name="ads[acta_title]" value="<?= e((string)($a['acta_title'] ?? '')) ?>"></label>
+          <label>Teks tombol<input name="ads[acta_text]" value="<?= e((string)($a['acta_text'] ?? '')) ?>" placeholder="<?= e(t('cta_default')) ?>"></label>
+          <label>URL penawaran<input name="ads[acta_url]" value="<?= e((string)($a['acta_url'] ?? '')) ?>" placeholder="https://..."></label>
+          <label>Posisi<select name="ads[acta_pos]">
+            <?php foreach (['both' => 'Tengah (setelah paragraf ke-4) + akhir artikel', 'middle' => 'Tengah saja', 'end' => 'Akhir artikel saja'] as $k => $lbl): ?>
+              <option value="<?= $k ?>" <?= ($a['acta_pos'] ?? 'both') === $k ? 'selected' : '' ?>><?= e($lbl) ?></option>
+            <?php endforeach; ?>
+          </select></label>
+        </div>
+        <label>Keterangan kecil <small>(opsional; tulis jujur, mis. "14 Tage kostenlos testen")</small><input name="ads[acta_note]" value="<?= e((string)($a['acta_note'] ?? '')) ?>"></label>
+        <label class="check"><input type="checkbox" name="ads[acta_in_adsense]" value="1" <?= !empty($a['acta_in_adsense']) ? 'checked' : '' ?>> Izinkan juga di mode AdSense</label>
+        <p class="help">Centang hanya untuk afiliasi produk/software resmi. Jangan untuk sweepstakes, survei berhadiah, nutra, atau judi di situs ber-AdSense.</p>
       </fieldset>
 
       <fieldset><legend>ads.txt</legend>
@@ -1238,12 +1266,15 @@ function page_article_edit(): void
         'body' => (string)($a['body'] ?? ''), 'cover' => (string)($a['cover'] ?? ''), 'keyword' => (string)($a['keyword'] ?? ''),
         'status' => (string)($a['status'] ?? 'draft'),
         'published_at' => utc_to_admin($a['published_at'] ?? null), 'notes' => '',
+        'cta_title' => (string)($a['cta_title'] ?? ''), 'cta_text' => (string)($a['cta_text'] ?? ''),
+        'cta_url' => (string)($a['cta_url'] ?? ''), 'cta_note' => (string)($a['cta_note'] ?? ''), 'cta_off' => (string)(int)($a['cta_off'] ?? 0),
     ];
     $translation = '';
     if (is_post()) {
-        foreach (['title', 'slug', 'excerpt', 'body', 'cover', 'keyword', 'status', 'published_at', 'notes'] as $k) {
+        foreach (['title', 'slug', 'excerpt', 'body', 'cover', 'keyword', 'status', 'published_at', 'notes', 'cta_title', 'cta_text', 'cta_url', 'cta_note'] as $k) {
             $form[$k] = trim(str_replace("\r", '', (string)post($k)));
         }
+        $form['cta_off'] = post('cta_off') ? '1' : '0';
         if (post('act') === 'translate') {
             @set_time_limit(180);
             try {
@@ -1284,10 +1315,20 @@ function page_article_edit(): void
                 if ($id && $a) {
                     q('UPDATE articles SET slug = ?, title = ?, excerpt = ?, body = ?, cover = ?, keyword = ?, status = ?, published_at = ?, updated_at = ? WHERE id = ?',
                         [$slug, $form['title'], $form['excerpt'], $form['body'], $cover, $form['keyword'], $status, $pub, now(), $id]);
+                    $saveCta = true;
                 } else {
                     q('INSERT INTO articles (slug, title, excerpt, body, cover, keyword, status, published_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
                         [$slug, $form['title'], $form['excerpt'], $form['body'], $cover, $form['keyword'], $status, $pub, now(), now()]);
                     $id = (int)db()->lastInsertId();
+                    $saveCta = true;
+                }
+                if (!empty($saveCta)) {
+                    $ctaUrl = preg_match('~^https?://\S+$~i', $form['cta_url']) ? $form['cta_url'] : '';
+                    if ($form['cta_url'] !== '' && $ctaUrl === '') {
+                        flash('URL penawaran tidak valid (harus diawali https://), penawaran artikel tidak disimpan.', 'err');
+                    }
+                    q('UPDATE articles SET cta_title = ?, cta_text = ?, cta_url = ?, cta_note = ?, cta_off = ? WHERE id = ?',
+                        [$form['cta_title'], $form['cta_text'], $ctaUrl, $form['cta_note'], (int)$form['cta_off'], $id]);
                 }
                 cache_clear();
                 flash($status !== 'published' ? 'Draf disimpan.' : (strtotime($pub . ' UTC') > time() ? 'Artikel dijadwalkan terbit ' . utc_to_admin($pub) . '.' : 'Artikel diterbitkan.'));
@@ -1321,6 +1362,16 @@ function page_article_edit(): void
         <?php else: ?><p><?= nl2br(e((string)$a['review_id'])) ?></p><?php endif; ?>
       </fieldset>
       <?php endif; ?>
+      <details class="cta-edit" <?= $form['cta_url'] !== '' || $form['cta_off'] === '1' ? 'open' : '' ?>><summary><b>Penawaran (CTA) untuk artikel ini</b> <small class="muted">— opsional; kosong = pakai penawaran default di menu <a href="/admin/ads#acta">Iklan</a></small></summary>
+        <div class="grid2">
+          <label>Judul kecil<input name="cta_title" value="<?= e($form['cta_title']) ?>" placeholder="mis. Excel-Kurs: 14 Tage gratis"></label>
+          <label>Teks tombol<input name="cta_text" value="<?= e($form['cta_text']) ?>" placeholder="<?= e(t('cta_default')) ?>"></label>
+          <label>URL penawaran (link afiliasi/CPA)<input name="cta_url" value="<?= e($form['cta_url']) ?>" placeholder="https://..."></label>
+          <label>Keterangan kecil<input name="cta_note" value="<?= e($form['cta_note']) ?>"></label>
+        </div>
+        <label class="check"><input type="checkbox" name="cta_off" value="1" <?= $form['cta_off'] === '1' ? 'checked' : '' ?>> Jangan tampilkan penawaran apa pun di artikel ini</label>
+        <p class="help">Penawaran yang cocok dengan topik artikel (mis. artikel Excel → trial kursus/software Excel) jauh lebih sering diklik daripada penawaran umum.</p>
+      </details>
       <div class="row"><button class="btn">Simpan</button>
         <?php if (site_lang() !== 'id' && $form['body'] !== ''): ?><button class="btn ghost" name="act" value="translate" formnovalidate>Terjemahkan ke Indonesia (cek isi)</button><?php endif; ?></div>
       <fieldset><legend>Bantuan AI (opsional)</legend>
@@ -1436,7 +1487,7 @@ a{color:var(--accent)}.wrap{max-width:1080px;margin:0 auto;padding:0 16px}
 header{background:#141a33;color:#fff}header .wrap{display:flex;flex-wrap:wrap;gap:12px 20px;align-items:center;min-height:56px;padding-top:8px;padding-bottom:8px}
 header .brand{font-weight:800;color:#fff;text-decoration:none}header nav{display:flex;flex-wrap:wrap;gap:4px 14px}header nav a{color:#c9d2ff;text-decoration:none;font-weight:600}
 header nav a.on{color:#fff;text-decoration:underline}header select{max-width:220px;padding:6px;border-radius:6px}header .right{margin-left:auto;display:flex;gap:12px;align-items:center}
-main{padding:24px 0 60px}h1{font-size:24px;margin:0 0 16px}h2{font-size:18px;margin:28px 0 10px}
+main{padding:24px 0 60px}.cta-edit{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin:14px 0}.cta-edit summary{cursor:pointer}h1{font-size:24px;margin:0 0 16px}h2{font-size:18px;margin:28px 0 10px}
 .form{display:grid;gap:12px;max-width:900px}.form.narrow{max-width:420px}.form.inline{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end}
 label{display:grid;gap:4px;font-weight:600;font-size:14px}label small,.help,.muted{color:var(--muted);font-weight:400}.help{font-size:13px;margin:0}
 input,select,textarea{font:inherit;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:#fff;width:100%}input[type=color]{height:40px;padding:2px}

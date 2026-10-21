@@ -521,6 +521,12 @@ function md_render(string $md): string
 function md_inline(string $s): string
 {
     $s = e($s);
+    // `kode` / rumus (penting untuk niche tutorial) — diamankan dulu agar tidak diubah oleh aturan lain
+    $codes = [];
+    $s = (string)preg_replace_callback('/`([^`\n]+)`/', function ($m) use (&$codes) {
+        $codes[] = '<code>' . $m[1] . '</code>';
+        return "\x00" . (count($codes) - 1) . "\x00";
+    }, $s);
     $s = (string)preg_replace_callback('/!\[([^\]]*)\]\((https:\/\/[^\s)]+)\)/', fn($m) =>
         '<img src="' . $m[2] . '" alt="' . $m[1] . '" loading="lazy">', $s);
     $s = (string)preg_replace_callback('/\[([^\]]+)\]\(((?:https?:\/\/|\/)[^\s)]+)\)/', function ($m) {
@@ -529,5 +535,5 @@ function md_inline(string $s): string
     }, $s);
     $s = (string)preg_replace('/\*\*(.+?)\*\*/', '<strong>$1</strong>', $s);
     $s = (string)preg_replace('/(?<![*\w])\*(?!\s)(.+?)(?<!\s)\*(?![*\w])/', '<em>$1</em>', $s);
-    return $s;
+    return $codes ? (string)preg_replace_callback('/\x00(\d+)\x00/', fn($m) => $codes[(int)$m[1]] ?? '', $s) : $s;
 }

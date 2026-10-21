@@ -1171,7 +1171,7 @@ function page_articles_admin(): void
       <p class="help">AI menulis judul, meta description, dan isi dalam bahasa situs, ditambah <b>ringkasan bahasa Indonesia</b> untuk Anda cek. Hasilnya selalu disimpan sebagai <b>draf</b>, tidak pernah terbit otomatis.
         Antrian: <b><?= $count('queued') ?></b> menunggu<?= $count('failed') ? ', <b class="danger">' . $count('failed') . '</b> gagal' : '' ?>.</p>
       <div class="row">
-        <form method="post" class="row" style="margin:0;align-items:end"><?= csrf_field() ?><input type="hidden" name="act" value="ideas">
+        <form method="post" class="row" style="margin:0;align-items:center;flex:1 1 640px"><?= csrf_field() ?><input type="hidden" name="act" value="ideas">
           <input name="focus" placeholder="fokus ide (opsional), mis. drama balas dendam" style="flex:1 1 280px;width:auto">
           <input type="number" name="n" value="10" min="3" max="20" style="width:80px;flex:0 0 80px" title="jumlah ide">
           <button class="btn ghost" <?= $hasAi ? '' : 'disabled' ?>>💡 Cari ide topik (AI)</button></form>

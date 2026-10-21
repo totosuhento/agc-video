@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-const VIDEO_COLS = 'v.id, v.title, v.slug, v.thumb, v.duration, v.views, v.published_at, v.channel_id, v.channel_title, v.source';
+const VIDEO_COLS = 'v.id, v.title, v.slug, v.thumb, v.duration, v.views, v.published_at, v.channel_id, v.channel_title, v.source, v.lang';
 
 function q(string $sql, array $params = []): PDOStatement
 {

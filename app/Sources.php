@@ -73,7 +73,7 @@ class Sources
         $pages = $first ? max(1, min(10, (int)cfg('youtube.initial_pages', 5))) : max(1, (int)cfg('youtube.pages_per_run', 2));
         for ($page = 1; $page <= $pages; $page++) {
             $r = $this->dmGet('https://api.dailymotion.com/user/' . rawurlencode((string)$info['id']) . '/videos?sort=recent&limit=100&page=' . $page,
-                ['id,title,description,thumbnail_720_url,duration,views_total,created_time,tags,allow_embed,private',
+                ['id,title,description,thumbnail_720_url,duration,views_total,created_time,tags,allow_embed,private,language',
                  'id,title,description,thumbnail_720_url,duration,created_time']);
             foreach ($r['list'] ?? [] as $v) {
                 $id = (string)($v['id'] ?? '');
@@ -81,7 +81,7 @@ class Sources
                     continue;
                 }
                 $added += $this->upsertVideo([
-                    'id' => 'dm:' . $id, 'source' => 'dailymotion', 'channel_id' => $cid, 'channel_title' => (string)($info['screenname'] ?? $user),
+                    'id' => 'dm:' . $id, 'source' => 'dailymotion', 'lang' => (string)($v['language'] ?? ''), 'channel_id' => $cid, 'channel_title' => (string)($info['screenname'] ?? $user),
                     'title' => (string)($v['title'] ?? $id), 'description' => (string)($v['description'] ?? ''),
                     'thumb' => (string)($v['thumbnail_720_url'] ?? ''), 'duration' => (int)($v['duration'] ?? 0),
                     'views' => (int)($v['views_total'] ?? 0), 'tags' => implode(', ', array_slice((array)($v['tags'] ?? []), 0, 15)),
@@ -130,7 +130,7 @@ class Sources
         $pages = $first ? 3 : 1;
         for ($page = 1; $page <= $pages; $page++) {
             $qs = http_build_query([
-                'q' => $q, 'fl' => ['identifier', 'title', 'description', 'publicdate', 'downloads', 'subject', 'licenseurl'],
+                'q' => $q, 'fl' => ['identifier', 'title', 'description', 'publicdate', 'downloads', 'subject', 'licenseurl', 'language'],
                 'sort' => ['downloads desc'], 'rows' => 100, 'page' => $page, 'output' => 'json',
             ]);
             $url = 'https://archive.org/advancedsearch.php?' . preg_replace('/%5B\d+%5D=/', '%5B%5D=', $qs);
@@ -141,7 +141,7 @@ class Sources
                     continue;
                 }
                 $added += $this->upsertVideo([
-                    'id' => 'ia:' . $id, 'source' => 'archive', 'channel_id' => $cid, 'channel_title' => 'Internet Archive',
+                    'id' => 'ia:' . $id, 'source' => 'archive', 'lang' => (string)(is_array($d['language'] ?? null) ? ($d['language'][0] ?? '') : ($d['language'] ?? '')), 'channel_id' => $cid, 'channel_title' => 'Internet Archive',
                     'title' => $this->flat($d['title'] ?? $id), 'description' => strip_tags($this->flat($d['description'] ?? '')),
                     'thumb' => 'https://archive.org/services/img/' . rawurlencode($id), 'duration' => 0,
                     'views' => (int)($d['downloads'] ?? 0), 'tags' => implode(', ', array_slice((array)($d['subject'] ?? []), 0, 15)),
@@ -291,16 +291,17 @@ class Sources
         $existed = (bool)q('SELECT 1 FROM videos WHERE id = ?', [$v['id']])->fetchColumn();
         $title = trim(preg_replace('/\s+/u', ' ', (string)$v['title']) ?? '') ?: $v['id'];
         $min = (int)cfg('youtube.min_duration', 0);
-        $active = $v['active'] && title_allowed($title) && ($v['duration'] === 0 || $v['duration'] >= $min);
+        $lang = lang_base((string)($v['lang'] ?? ''));
+        $active = $v['active'] && title_allowed($title) && ($v['duration'] === 0 || $v['duration'] >= $min) && video_lang_ok($lang);
         q('INSERT INTO videos (id, channel_id, channel_title, title, slug, description, thumb, duration, views, likes, tags, search,
-                               published_at, is_active, created_at, updated_at, source, embed_url, source_url)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-           ON CONFLICT(id) DO UPDATE SET title = excluded.title, description = excluded.description, thumb = excluded.thumb,
+                               published_at, is_active, created_at, updated_at, source, embed_url, source_url, lang)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(id) DO UPDATE SET title = excluded.title, description = excluded.description, thumb = excluded.thumb, lang = excluded.lang,
              duration = excluded.duration, views = excluded.views, tags = excluded.tags, search = excluded.search,
              is_active = excluded.is_active, updated_at = excluded.updated_at, embed_url = excluded.embed_url', [
             $v['id'], $v['channel_id'], $v['channel_title'], $title, make_slug($title, $v['id']), $v['description'], $v['thumb'],
             $v['duration'], $v['views'], $v['tags'], mb_strtolower($title . ' ' . $v['tags']), $v['published_at'],
-            $active ? 1 : 0, now(), now(), $v['source'], $v['embed_url'], $v['source_url'],
+            $active ? 1 : 0, now(), now(), $v['source'], $v['embed_url'], $v['source_url'], $lang,
         ]);
         return !$existed && $active ? 1 : 0;
     }

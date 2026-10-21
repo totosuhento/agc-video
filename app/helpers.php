@@ -429,10 +429,25 @@ function video_thumb(array $v, string $quality = 'mqdefault'): string
 
 function video_embed_url(array $v): string
 {
+    $mode = (string)cfg('player.subtitles', 'auto');
+    $l = site_lang();
     if (video_source($v) === 'youtube') {
-        return 'https://www.youtube-nocookie.com/embed/' . rawurlencode((string)$v['id']);
+        $url = 'https://www.youtube-nocookie.com/embed/' . rawurlencode((string)$v['id']);
+        if ($mode === 'off') {
+            return $url;
+        }
+        // hl = bahasa tombol player; cc_lang_pref = bahasa subtitle yang dipilih bila tersedia
+        $q = ['hl' => $l === 'zh' ? 'zh-CN' : $l, 'cc_lang_pref' => $l === 'zh' ? 'zh-Hans' : $l];
+        if (video_force_subs($v)) {
+            $q['cc_load_policy'] = 1;
+        }
+        return $url . '?' . http_build_query($q);
     }
-    return (string)($v['embed_url'] ?? '');
+    $url = (string)($v['embed_url'] ?? '');
+    if (video_source($v) === 'dailymotion' && $url !== '' && video_force_subs($v)) {
+        $url .= (str_contains($url, '?') ? '&' : '?') . 'subtitles-default=' . rawurlencode($l);
+    }
+    return $url;
 }
 
 function video_source_url(array $v): string

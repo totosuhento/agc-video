@@ -62,6 +62,13 @@ function db_migrate(PDO $pdo): void
         PRAGMA user_version = 3;
         SQL);
     }
+    if ($version < 4) {
+        // v4: bahasa suara video (untuk filter bahasa & subtitle otomatis)
+        $pdo->exec(<<<SQL
+        ALTER TABLE videos ADD COLUMN lang TEXT;
+        PRAGMA user_version = 4;
+        SQL);
+    }
 }
 
 function db_migrate_v1(PDO $pdo): void

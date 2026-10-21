@@ -122,6 +122,9 @@ function apply_preset(array $config, string $presetId): array
     $config['youtube']['min_duration'] = $p['min_duration'];
     $config['youtube']['exclude_keywords'] = $p['exclude'];
     $config['youtube']['include_keywords'] = [];
+    // Tutorial, masak, dokumenter: suara harus sebahasa dengan pembaca. Drama/anime: suara asli + subtitle.
+    $config['youtube']['audio_langs'] = in_array($presetId, ['software_tutorial', 'cooking', 'documentary'], true) ? [$lang] : [];
+    $config['player']['subtitles'] = in_array($presetId, ['short_drama', 'kdrama', 'anime', 'horror'], true) ? 'always' : 'auto';
     return $config;
 }
 

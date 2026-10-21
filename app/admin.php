@@ -419,6 +419,8 @@ function page_settings(): void
         $c['youtube']['api_key'] = trim((string)post('youtube.api_key'));
         $c['youtube']['include_keywords'] = str_list((string)post('youtube.include_keywords'));
         $c['youtube']['exclude_keywords'] = str_list((string)post('youtube.exclude_keywords'));
+        $c['youtube']['audio_langs'] = array_values(array_unique(array_filter(array_map('lang_base', str_list((string)post('youtube.audio_langs'))))));
+        $c['player']['subtitles'] = in_array(post('player.subtitles'), ['auto', 'always', 'off'], true) ? (string)post('player.subtitles') : 'auto';
         $c['youtube']['min_duration'] = clamp_int(post('youtube.min_duration'), 0, 36000, 120);
         $c['youtube']['initial_pages'] = clamp_int(post('youtube.initial_pages'), 1, 200, 20);
         $c['youtube']['daily_quota'] = clamp_int(post('youtube.daily_quota'), 100, 1000000, 9000);
@@ -490,6 +492,18 @@ function page_settings(): void
           <label>Hanya ambil judul yang memuat salah satu kata ini <small>(kosong = semua)</small><textarea name="youtube[include_keywords]" rows="3"><?= e(implode("\n", (array)$c['youtube']['include_keywords'])) ?></textarea></label>
           <label>Buang video yang judulnya memuat kata ini<textarea name="youtube[exclude_keywords]" rows="3"><?= e(implode("\n", (array)$c['youtube']['exclude_keywords'])) ?></textarea></label>
         </div>
+        <div class="grid2">
+          <label>Bahasa suara video yang diizinkan <small>(kode, pisahkan koma; kosong = semua bahasa)</small>
+            <input name="youtube[audio_langs]" value="<?= e(implode(', ', (array)($c['youtube']['audio_langs'] ?? []))) ?>" placeholder="mis. <?= e($c['site']['lang']) ?>"></label>
+          <label>Subtitle di player<select name="player[subtitles]">
+            <?php foreach (['auto' => 'Otomatis: nyalakan bila bahasa video ≠ bahasa situs', 'always' => 'Selalu nyala (cocok untuk drama/anime)', 'off' => 'Mati'] as $k => $lbl): ?>
+              <option value="<?= $k ?>" <?= ($c['player']['subtitles'] ?? 'auto') === $k ? 'selected' : '' ?>><?= e($lbl) ?></option>
+            <?php endforeach; ?>
+          </select></label>
+        </div>
+        <p class="help">Tutorial/masak/dokumenter: isi dengan bahasa situs (mis. <code><?= e($c['site']['lang']) ?></code>) agar pengunjung mendapat video yang suaranya mereka mengerti.
+          Drama/anime: biarkan kosong (suara asli) dan nyalakan subtitle — player otomatis memilih subtitle bahasa situs bila channel menyediakannya.
+          Video yang bahasanya tidak dicatat oleh channel tetap ditampilkan.</p>
         <div class="grid3">
           <label>Durasi minimal (detik)<input type="number" name="youtube[min_duration]" value="<?= (int)$c['youtube']['min_duration'] ?>" min="0"></label>
           <label>Halaman awal per channel (×50 video)<input type="number" name="youtube[initial_pages]" value="<?= (int)$c['youtube']['initial_pages'] ?>" min="1"></label>
@@ -1069,6 +1083,18 @@ function page_articles_admin(): void
             flash($n ? "$n topik masuk antrian. Diproses otomatis oleh cron (" . (int)cfg('ai.articles_per_run', 2) . ' artikel tiap 30 menit), atau klik "Proses 1 sekarang".' : 'Tidak ada topik.', $n ? 'ok' : 'err');
             redirect('/admin/articles');
         }
+        if ($act === 'ideas') {
+            @set_time_limit(180);
+            try {
+                $titles = q('SELECT title FROM videos WHERE is_active = 1 ORDER BY views DESC LIMIT 40')->fetchAll(PDO::FETCH_COLUMN);
+                $existing = q("SELECT COALESCE(NULLIF(brief, ''), title) FROM articles ORDER BY id DESC LIMIT 60")->fetchAll(PDO::FETCH_COLUMN);
+                $_SESSION['ideas'] = implode("\n", AI::topicIdeas(max(3, min(20, (int)post('n', 10))), $titles, $existing, trim((string)post('focus'))));
+                flash('Ide topik dari AI sudah diisikan ke kotak di bawah. Hapus yang kurang cocok, lalu klik "Masukkan antrian".');
+            } catch (Throwable $e) {
+                flash('AI gagal: ' . $e->getMessage(), 'err');
+            }
+            redirect('/admin/articles');
+        }
         if ($act === 'process') {
             @set_time_limit(180);
             try {
@@ -1128,6 +1154,8 @@ function page_articles_admin(): void
     $hasAi = trim((string)cfg('ai.api_key', '')) !== '' && trim((string)cfg('ai.model', '')) !== '';
     $base = rtrim((string)cfg('site.url'), '/');
     $nextSlot = (new DateTime('tomorrow 08:00', admin_tz()))->format('Y-m-d\TH:i');
+    $ideas = (string)($_SESSION['ideas'] ?? '');
+    unset($_SESSION['ideas']);
     ob_start(); ?>
     <div class="row"><a class="btn ghost" href="/admin/articles/edit">+ Tulis manual</a></div>
 
@@ -1136,15 +1164,23 @@ function page_articles_admin(): void
       <form method="post" class="form">
         <?= csrf_field() ?><input type="hidden" name="act" value="queue">
         <label><span>Topik — satu per baris, <b>boleh dalam bahasa Indonesia</b>. Opsional: <code>topik | kata kunci video</code></span>
-          <textarea name="topics" rows="6" placeholder="10 drama Korea balas dendam terbaik untuk pemula | revenge&#10;Urutan menonton serial X dari awal sampai akhir | X&#10;Rumus Excel yang paling sering dipakai di kantor | Excel"></textarea></label>
+          <textarea name="topics" rows="<?= $ideas !== '' ? 12 : 6 ?>" placeholder="10 drama Korea balas dendam terbaik untuk pemula | revenge&#10;Urutan menonton serial X dari awal sampai akhir | X&#10;Rumus Excel yang paling sering dipakai di kantor | Excel"><?= e($ideas) ?></textarea></label>
         <label>Catatan gaya untuk semua topik <small>(opsional: sudut pandang, target pembaca, hal yang wajib dibahas)</small><input name="notes"></label>
         <button class="btn" <?= $hasAi ? '' : 'disabled' ?>>Masukkan antrian</button>
       </form>
       <p class="help">AI menulis judul, meta description, dan isi dalam bahasa situs, ditambah <b>ringkasan bahasa Indonesia</b> untuk Anda cek. Hasilnya selalu disimpan sebagai <b>draf</b>, tidak pernah terbit otomatis.
         Antrian: <b><?= $count('queued') ?></b> menunggu<?= $count('failed') ? ', <b class="danger">' . $count('failed') . '</b> gagal' : '' ?>.</p>
-      <?php if ($count('queued')): ?>
-        <form method="post"><?= csrf_field() ?><input type="hidden" name="act" value="process"><button class="btn ghost">Proses 1 sekarang</button></form>
-      <?php endif; ?>
+      <div class="row">
+        <form method="post" class="row" style="margin:0;align-items:end"><?= csrf_field() ?><input type="hidden" name="act" value="ideas">
+          <input name="focus" placeholder="fokus ide (opsional), mis. drama balas dendam" style="flex:1 1 280px;width:auto">
+          <input type="number" name="n" value="10" min="3" max="20" style="width:80px;flex:0 0 80px" title="jumlah ide">
+          <button class="btn ghost" <?= $hasAi ? '' : 'disabled' ?>>💡 Cari ide topik (AI)</button></form>
+        <?php if ($count('queued')): ?>
+          <form method="post" style="margin:0"><?= csrf_field() ?><input type="hidden" name="act" value="process"><button class="btn ghost">Proses 1 sekarang</button></form>
+        <?php endif; ?>
+      </div>
+      <p class="help">💡 AI mencari kueri <i>long-tail</i> yang spesifik dan persaingannya rendah — jenis kata kunci yang paling cepat mendatangkan trafik untuk situs baru.
+        Setiap ide memuat <code>[target: kueri dalam bahasa situs]</code>; artikel akan ditulis untuk menjawab kueri itu.</p>
     </fieldset>
 
     <h2>Semua artikel</h2>
@@ -1345,6 +1381,12 @@ function page_social(): void
         </div>
         <p class="help">Tombol berupa link biasa (tanpa script Facebook/X), jadi tidak memperlambat halaman dan tidak menambah cookie pihak ketiga. Tombol "Share" bawaan HP dan "Salin link" selalu ada.
           Saran: Indonesia/India → WhatsApp & Telegram; AS/Eropa → Facebook, Pinterest, Reddit, X; Jepang/Taiwan → LINE.</p>
+      </fieldset>
+
+      <fieldset><legend>Pinterest, Flipboard & pembaca RSS (otomatis, gratis)</legend>
+        <p class="help">Feed RSS situs ini (artikel + video baru, dengan gambar besar): <code><?= e(rtrim((string)cfg('site.url'), '/')) ?>/feed.xml</code><br>
+          <b>Pinterest</b> sangat kuat untuk trafik AS/Eropa: buat akun bisnis → Settings → <i>Bulk create Pins</i> → <i>Auto-publish</i> → tempel URL feed di atas dan pilih board.
+          Pinterest lalu membuat pin otomatis untuk setiap artikel/video baru. Juga bisa didaftarkan di Flipboard dan Feedly.</p>
       </fieldset>
 
       <fieldset><legend>Auto-post ke channel Telegram</legend>

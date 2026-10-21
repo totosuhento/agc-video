@@ -47,6 +47,7 @@ $hasArticles = function_exists('articles_count') && articles_count() > 0;
 <?php endif; ?>
 <?php if ($schema) echo json_ld($schema), "\n"; ?>
 <?= seo_verify_meta() ?>
+<link rel="alternate" type="application/rss+xml" title="<?= e(cfg('site.name')) ?>" href="/feed.xml">
 <?= cfg('analytics', '') ?>
 <?= adsense_head() ?>
 <?= cfg('push.head', '') ?>

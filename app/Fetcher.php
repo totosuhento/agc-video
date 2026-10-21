@@ -286,6 +286,7 @@ final class Fetcher
         $cd = $item['contentDetails'] ?? [];
         $st = $item['status'] ?? [];
         $duration = iso_duration_to_seconds((string)($cd['duration'] ?? ''));
+        $lang = lang_base((string)($sn['defaultAudioLanguage'] ?? $sn['defaultLanguage'] ?? ''));
 
         $active = ($st['privacyStatus'] ?? '') === 'public'
             && ($st['embeddable'] ?? false) === true
@@ -294,23 +295,24 @@ final class Fetcher
             && !isset($cd['contentRating']['ytRating'])          // video 18+ tidak bisa di-embed
             && $duration >= (int)cfg('youtube.min_duration', 0)
             && $duration > 0
-            && title_allowed((string)($sn['title'] ?? ''));
+            && title_allowed((string)($sn['title'] ?? ''))
+            && video_lang_ok($lang);
 
         $th = $sn['thumbnails'] ?? [];
         $tags = implode(', ', array_slice((array)($sn['tags'] ?? []), 0, 15));
         q('INSERT INTO videos (id, channel_id, channel_title, title, slug, description, thumb, duration, views, likes, tags,
-                               search, published_at, is_active, created_at, updated_at, source, embed_url, source_url)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, \'youtube\', \'https://www.youtube-nocookie.com/embed/\' || ?, \'https://www.youtube.com/watch?v=\' || ?)
+                               search, published_at, is_active, created_at, updated_at, lang, source, embed_url, source_url)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, \'youtube\', \'https://www.youtube-nocookie.com/embed/\' || ?, \'https://www.youtube.com/watch?v=\' || ?)
            ON CONFLICT(id) DO UPDATE SET channel_title = excluded.channel_title, title = excluded.title,
              description = excluded.description, thumb = excluded.thumb, duration = excluded.duration,
              views = excluded.views, likes = excluded.likes, tags = excluded.tags, search = excluded.search,
-             is_active = excluded.is_active, updated_at = excluded.updated_at', [
+             is_active = excluded.is_active, updated_at = excluded.updated_at, lang = excluded.lang', [
             $item['id'], $sn['channelId'] ?? '', $sn['channelTitle'] ?? '', $sn['title'] ?? $item['id'],
             make_slug($sn['title'] ?? $item['id'], $item['id']), $sn['description'] ?? '',
             $th['maxres']['url'] ?? $th['high']['url'] ?? yt_thumb($item['id']),
             $duration, (int)($item['statistics']['viewCount'] ?? 0), (int)($item['statistics']['likeCount'] ?? 0),
             $tags, mb_strtolower(($sn['title'] ?? '') . ' ' . $tags), isset($sn['publishedAt']) ? gmdate('Y-m-d H:i:s', strtotime($sn['publishedAt'])) : now(),
-            $active ? 1 : 0, now(), now(), $item['id'], $item['id'],
+            $active ? 1 : 0, now(), now(), $lang, $item['id'], $item['id'],
         ]);
         return $active;
     }

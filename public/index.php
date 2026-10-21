@@ -80,6 +80,7 @@ $routes = [
     '#^/sitemap\.xml$#'                       => 'sitemap_index',
     '#^/sitemap-(pages|series|videos)-(\d+)\.xml$#' => 'sitemap_part',
     '#^/robots\.txt$#'                        => 'robots_txt',
+    '#^/feed\.xml$#'                          => 'feed_xml',
     '#^/ads\.txt$#'                           => 'ads_txt_page',
     '#^/articles$#'                           => 'page_articles',
     '#^/article/([a-z0-9-]{1,120})$#'         => 'page_article',

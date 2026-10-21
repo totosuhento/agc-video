@@ -71,7 +71,7 @@ function page_video(string $slug): array
                 '@type' => 'VideoObject',
                 'name' => $v['title'],
                 'description' => $metaDesc,
-                'thumbnailUrl' => array_values(array_filter([video_thumb($v, 'hqdefault')])),
+                'thumbnailUrl' => array_values(array_unique(array_filter([(string)$v['thumb'], video_thumb($v, 'hqdefault')]))),
                 'uploadDate' => date('c', strtotime($v['published_at'] . ' UTC')),
                 'duration' => seconds_to_iso((int)$v['duration']),
                 'embedUrl' => video_embed_url($v),
@@ -262,7 +262,7 @@ function page_article(string $slug): array
     $related = trim((string)$a['keyword']) !== '' ? videos_search((string)$a['keyword'], 1, 8)[0] : [];
     $more = articles_related($a['title'] . ' ' . $a['keyword'], 3, $slug);
     $desc = excerpt(trim((string)$a['excerpt']) ?: (string)preg_replace('/[#*\[\]>]/', '', (string)$a['body']), 158);
-    $image = (string)($a['cover'] ?: ($related ? video_thumb($related[0], 'hqdefault') : ''));
+    $image = (string)($a['cover'] ?: ($related ? ($related[0]['thumb'] ?: video_thumb($related[0], 'hqdefault')) : ''));
     $schema = [
         '@context' => 'https://schema.org',
         '@graph' => [
@@ -380,10 +380,33 @@ function sitemap_part(string $kind, string $n): array
             $urls[] = [url('series/' . $r['slug']), $r['updated_at']];
         }
     } else {
-        foreach (q('SELECT slug, updated_at FROM videos WHERE is_active = 1 AND ' . video_index_sql() . ' ORDER BY published_at DESC LIMIT ? OFFSET ?',
+        // Sitemap video: membantu Google menampilkan halaman ini di tab Video & hasil video
+        $xml = '<?xml version="1.0" encoding="UTF-8"?>' . "\n"
+            . '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:video="http://www.google.com/schemas/sitemap-video/1.1">';
+        $n = 0;
+        foreach (q('SELECT id, slug, title, thumb, duration, published_at, updated_at, ai_summary, description, source, embed_url, lang
+                    FROM videos WHERE is_active = 1 AND ' . video_index_sql() . ' ORDER BY published_at DESC LIMIT ? OFFSET ?',
             [SITEMAP_SIZE, $offset])->fetchAll() as $r) {
-            $urls[] = [url('video/' . $r['slug']), $r['updated_at']];
+            $n++;
+            $thumb = (string)$r['thumb'] ?: video_thumb($r, 'hqdefault');
+            $desc = excerpt((string)($r['ai_summary'] ?: clean_description((string)$r['description'])) ?: (string)$r['title'], 2000);
+            $player = video_embed_url($r);
+            $xml .= '<url><loc>' . e(url('video/' . $r['slug'])) . '</loc><lastmod>' . substr((string)$r['updated_at'], 0, 10) . '</lastmod>';
+            if ($thumb !== '' && $player !== '') {
+                $xml .= '<video:video><video:thumbnail_loc>' . e($thumb) . '</video:thumbnail_loc>'
+                    . '<video:title>' . e(excerpt((string)$r['title'], 100)) . '</video:title>'
+                    . '<video:description>' . e($desc) . '</video:description>'
+                    . (video_source($r) === 'nasa' ? '<video:content_loc>' . e($player) . '</video:content_loc>' : '<video:player_loc>' . e($player) . '</video:player_loc>')
+                    . ((int)$r['duration'] > 0 ? '<video:duration>' . min(28800, (int)$r['duration']) . '</video:duration>' : '')
+                    . '<video:publication_date>' . date('c', strtotime($r['published_at'] . ' UTC')) . '</video:publication_date>'
+                    . '<video:family_friendly>yes</video:family_friendly></video:video>';
+            }
+            $xml .= '</url>';
         }
+        if (!$n && $page > 1) {
+            return not_found();
+        }
+        return ['status' => 200, 'type' => XML, 'body' => $xml . '</urlset>'];
     }
     if (!$urls && $page > 1) {
         return not_found();
@@ -393,6 +416,39 @@ function sitemap_part(string $kind, string $n): array
         $xml .= '<url><loc>' . e($loc) . '</loc>' . ($mod ? '<lastmod>' . substr($mod, 0, 10) . '</lastmod>' : '') . '</url>';
     }
     return ['status' => 200, 'type' => XML, 'body' => $xml . '</urlset>'];
+}
+
+/** RSS: artikel + video baru, dengan gambar besar. Dipakai Pinterest (auto-pin dari RSS), Flipboard, Feedly, Bing. */
+function feed_xml(): array
+{
+    $items = [];
+    foreach (q("SELECT slug, title, excerpt, cover, keyword, published_at FROM articles WHERE status = 'published' AND published_at <= ?
+                ORDER BY published_at DESC LIMIT 30", [now()])->fetchAll() as $a) {
+        $img = (string)$a['cover'];
+        if ($img === '' && trim((string)$a['keyword']) !== '' && ($rv = videos_search((string)$a['keyword'], 1, 1)[0])) {
+            $img = (string)($rv[0]['thumb'] ?: video_thumb($rv[0], 'hqdefault'));
+        }
+        $items[] = ['t' => $a['title'], 'u' => url('article/' . $a['slug']), 'd' => (string)$a['excerpt'], 'img' => $img, 'at' => $a['published_at']];
+    }
+    foreach (q('SELECT id, slug, title, thumb, ai_summary, description, source, created_at FROM videos WHERE is_active = 1 AND ' . video_index_sql()
+               . ' ORDER BY created_at DESC LIMIT 30')->fetchAll() as $v) {
+        $items[] = ['t' => $v['title'], 'u' => url('video/' . $v['slug']), 'd' => (string)($v['ai_summary'] ?: clean_description((string)$v['description'])),
+            'img' => (string)($v['thumb'] ?: video_thumb($v, 'hqdefault')), 'at' => $v['created_at']];
+    }
+    usort($items, fn($a, $b) => strcmp((string)$b['at'], (string)$a['at']));
+    $xml = '<?xml version="1.0" encoding="UTF-8"?>' . "\n"
+        . '<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom" xmlns:media="http://search.yahoo.com/mrss/"><channel>'
+        . '<title>' . e(cfg('site.name')) . '</title><link>' . e(url()) . '</link>'
+        . '<description>' . e(t('home_meta', cfg('site.name'))) . '</description><language>' . e(html_lang()) . '</language>'
+        . '<atom:link href="' . e(url('feed.xml')) . '" rel="self" type="application/rss+xml"/>';
+    foreach (array_slice($items, 0, 40) as $it) {
+        $xml .= '<item><title>' . e($it['t']) . '</title><link>' . e($it['u']) . '</link><guid isPermaLink="true">' . e($it['u']) . '</guid>'
+            . '<pubDate>' . gmdate(DATE_RSS, (int)strtotime($it['at'] . ' UTC')) . '</pubDate>'
+            . '<description>' . e(excerpt($it['d'], 300)) . '</description>'
+            . ($it['img'] !== '' ? '<enclosure url="' . e($it['img']) . '" type="image/jpeg" length="0"/><media:content url="' . e($it['img']) . '" medium="image"/>' : '')
+            . '</item>';
+    }
+    return ['status' => 200, 'type' => 'application/rss+xml; charset=utf-8', 'body' => $xml . '</channel></rss>'];
 }
 
 function robots_txt(): array

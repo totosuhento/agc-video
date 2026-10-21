@@ -203,7 +203,7 @@ final class Site
     {
         // Daftar (channels, keywords, ...) diganti utuh, bukan digabung per indeks
         $merged = array_replace_recursive(default_config(), $config);
-        foreach (['youtube' => ['channels', 'include_keywords', 'exclude_keywords'], 'site' => ['keywords'], 'share' => ['networks']] as $sec => $keys) {
+        foreach (['youtube' => ['channels', 'include_keywords', 'exclude_keywords', 'audio_langs'], 'site' => ['keywords'], 'share' => ['networks']] as $sec => $keys) {
             foreach ($keys as $k) {
                 if (isset($config[$sec][$k])) {
                     $merged[$sec][$k] = array_values((array)$config[$sec][$k]);
@@ -259,7 +259,9 @@ function default_config(): array
             'api_key' => '', 'channels' => [], 'include_keywords' => [], 'exclude_keywords' => ['#shorts'],
             'min_duration' => 120, 'initial_pages' => 20, 'pages_per_run' => 2, 'series_per_run' => 20,
             'playlist_refresh_hours' => 24, 'refresh_per_run' => 1000, 'daily_quota' => 9000,
+            'audio_langs' => [],          // kosong = semua bahasa; mis. ['de'] = hanya video berbahasa Jerman
         ],
+        'player' => ['subtitles' => 'auto'],   // auto | always | off
         'ai' => ['enabled' => false, 'provider' => '', 'api_key' => '', 'model' => '', 'endpoint' => '', 'per_run' => 30, 'articles_per_run' => 2],
         'ads' => [
             'mode' => 'adsense',          // adsense | network | custom

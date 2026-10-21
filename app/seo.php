@@ -152,3 +152,46 @@ function articles_related(string $text, int $limit = 3, string $excludeSlug = ''
     }
     return array_slice($fillLatest ? array_merge($hit, $rest) : $hit, 0, $limit);
 }
+
+/* ================= Bahasa video & subtitle ================= */
+
+/** Normalisasi kode bahasa: "de-DE" → "de", "zh-Hans" → "zh", "eng"/"English" → "en". Kosong bila tidak diketahui. */
+function lang_base(?string $code): string
+{
+    $c = strtolower(trim((string)$code));
+    if ($c === '' || in_array($c, ['zxx', 'und', 'mul', 'mis'], true)) {
+        return '';
+    }
+    $map = ['eng' => 'en', 'english' => 'en', 'ger' => 'de', 'deu' => 'de', 'german' => 'de', 'fre' => 'fr', 'fra' => 'fr', 'french' => 'fr',
+        'spa' => 'es', 'spanish' => 'es', 'dut' => 'nl', 'nld' => 'nl', 'dutch' => 'nl', 'jpn' => 'ja', 'japanese' => 'ja',
+        'kor' => 'ko', 'korean' => 'ko', 'chi' => 'zh', 'zho' => 'zh', 'chinese' => 'zh', 'hin' => 'hi', 'hindi' => 'hi',
+        'ind' => 'id', 'indonesian' => 'id', 'in' => 'id', 'iw' => 'he', 'ita' => 'it', 'italian' => 'it', 'por' => 'pt', 'portuguese' => 'pt',
+        'deutsch' => 'de', 'español' => 'es', 'espanol' => 'es', 'français' => 'fr', 'francais' => 'fr', 'nederlands' => 'nl',
+        'indonesia' => 'id', 'bahasa indonesia' => 'id', 'inggris' => 'en', 'jerman' => 'de', 'korea' => 'ko', 'jepang' => 'ja'];
+    if (isset($map[$c])) {
+        return $map[$c];
+    }
+    $c = (string)preg_split('/[-_]/', $c)[0];
+    $known = ['id', 'en', 'de', 'es', 'fr', 'nl', 'zh', 'ko', 'ja', 'hi', 'it', 'pt', 'ru', 'ar', 'tr', 'th', 'vi', 'ms', 'tl', 'fil', 'pl', 'sv',
+        'da', 'no', 'nb', 'fi', 'he', 'el', 'cs', 'hu', 'ro', 'uk', 'bn', 'ta', 'te', 'ur', 'fa', 'jv', 'su'];
+    return $map[$c] ?? (in_array($c, $known, true) ? $c : '');
+}
+
+/** Filter "Bahasa suara video": video dengan bahasa yang DIKETAHUI dan tidak diizinkan → disembunyikan. */
+function video_lang_ok(?string $lang): bool
+{
+    $allow = array_filter(array_map('lang_base', (array)cfg('youtube.audio_langs', [])));
+    $l = lang_base($lang);
+    return !$allow || $l === '' || in_array($l, $allow, true);
+}
+
+/** Paksa subtitle menyala untuk video ini? */
+function video_force_subs(array $v): bool
+{
+    $mode = (string)cfg('player.subtitles', 'auto');
+    if ($mode === 'always') {
+        return true;
+    }
+    $l = lang_base($v['lang'] ?? '');
+    return $mode === 'auto' && $l !== '' && $l !== site_lang();
+}

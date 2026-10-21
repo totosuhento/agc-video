@@ -91,6 +91,8 @@ final class AI
         Extra notes from the editor: $notes
 
         Rules:
+        - If the topic contains [target: ...], that is the search query to rank for: answer it directly in the first paragraph and use it
+          (or a natural variant) in the title and in one "## " heading. Search intent first: give the reader the answer quickly.
         - 700 to 1000 words, Markdown body: "## " section headings, short paragraphs, bullet lists where useful.
         - Explain, compare, give tips or a watching/learning order. Natural tone, no keyword stuffing.
         - Do NOT invent facts (release dates, cast, numbers, awards, prices). If unsure, stay general.
@@ -127,6 +129,45 @@ final class AI
         }, $out['body']);
         $out['body'] = trim((string)preg_replace("/\n{3,}/", "\n\n", $out['body']));
         return $out;
+    }
+
+    /**
+     * Riset cepat: ide topik long-tail yang dicari orang di negara target dan bisa didukung video di situs.
+     * @return string[] baris siap tempel ke antrian: "topik (ID) [target: kueri] | kata kunci video"
+     */
+    public static function topicIdeas(int $n, array $videoTitles, array $existing, string $focus = ''): array
+    {
+        $lang = self::language();
+        $niche = trim((string)cfg('site.niche', '')) ?: t('_niche');
+        $country = strtoupper((string)cfg('site.country', '')) ?: 'worldwide';
+        $vids = implode("\n", array_map(fn($t) => '- ' . $t, array_slice($videoTitles, 0, 40))) ?: '(none yet)';
+        $done = implode("\n", array_map(fn($t) => '- ' . $t, array_slice($existing, 0, 60))) ?: '(none)';
+        $prompt = <<<P
+        You are an SEO strategist for a new, low-authority website about $niche for readers in $country, written in $lang.
+        Suggest $n article ideas that can bring search traffic QUICKLY: long-tail, specific, low-competition queries that real people
+        in $country type into Google (questions, "best ... for ...", "... vs ...", "how to ...", "... explained", watch order, beginner guides,
+        problems/errors and fixes). Avoid broad head terms and avoid news that needs facts you do not know.
+        Prefer topics that can be illustrated with these videos available on the site:
+        $vids
+        Do NOT repeat these existing articles:
+        $done
+        Editor's focus (optional): $focus
+
+        Output exactly $n lines, no numbering, no extra text, each line in this format:
+        <short description of the article in Indonesian> [target: <the exact search query in $lang>] | <1-2 words that appear literally in some of the video titles above, or empty>
+        P;
+        $lines = preg_split('/\R/u', trim(self::complete($prompt, 1500))) ?: [];
+        $out = [];
+        foreach ($lines as $l) {
+            $l = trim((string)preg_replace('/^\s*(?:[-*•]|\d+[.)])\s*/u', '', $l));
+            if ($l !== '' && mb_strlen($l) <= 400 && str_contains($l, '[target:')) {
+                $out[] = $l;
+            }
+        }
+        if (!$out) {
+            throw new RuntimeException('AI tidak mengembalikan ide dengan format yang benar, coba lagi');
+        }
+        return array_slice($out, 0, $n);
     }
 
     /** Terjemahkan teks ke bahasa Indonesia agar editor bisa mengecek isi artikel berbahasa asing. */

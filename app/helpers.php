@@ -406,3 +406,113 @@ function normalize_channel_ref(string $in): string
     }
     return '';
 }
+
+/* ---------- Video dari berbagai sumber ---------- */
+
+function video_source(array $v): string
+{
+    return (string)($v['source'] ?? '') ?: 'youtube';
+}
+
+function source_name(string $source): string
+{
+    return ['youtube' => 'YouTube', 'dailymotion' => 'Dailymotion', 'archive' => 'Internet Archive', 'nasa' => 'NASA', 'tiktok' => 'TikTok'][$source] ?? $source;
+}
+
+function video_thumb(array $v, string $quality = 'mqdefault'): string
+{
+    if (video_source($v) === 'youtube') {
+        return yt_thumb((string)$v['id'], $quality);
+    }
+    return (string)($v['thumb'] ?? '');
+}
+
+function video_embed_url(array $v): string
+{
+    if (video_source($v) === 'youtube') {
+        return 'https://www.youtube-nocookie.com/embed/' . rawurlencode((string)$v['id']);
+    }
+    return (string)($v['embed_url'] ?? '');
+}
+
+function video_source_url(array $v): string
+{
+    if (video_source($v) === 'youtube') {
+        return 'https://www.youtube.com/watch?v=' . rawurlencode((string)$v['id']);
+    }
+    return (string)($v['source_url'] ?? '');
+}
+
+function is_public_domain_source(string $source): bool
+{
+    return in_array($source, ['archive', 'nasa'], true);
+}
+
+/** Situs ini memakai sumber selain YouTube? (untuk teks privasi) */
+function site_uses_other_sources(): bool
+{
+    return (bool)array_filter((array)cfg('sources', []), fn($s) => trim((string)($s['value'] ?? '')) !== '');
+}
+
+/* ---------- Markdown sederhana & aman untuk artikel ---------- */
+
+/**
+ * Format yang didukung: ## Judul, ### Subjudul, **tebal**, *miring*, [teks](https://link), ![alt](https://gambar),
+ * daftar "- " dan "1. ", kutipan "> ", serta baris khusus [video:slug-video] untuk menyisipkan kartu video.
+ * Slot iklan "in_article" otomatis disisipkan setelah paragraf ke-2.
+ */
+function md_render(string $md): string
+{
+    $md = str_replace("\r", '', trim($md));
+    $blocks = preg_split("/\n{2,}/", $md) ?: [];
+    $html = '';
+    $paras = 0;
+    foreach ($blocks as $b) {
+        $b = trim($b);
+        if ($b === '') {
+            continue;
+        }
+        if (preg_match('/^\[video:\s*([a-z0-9-]{1,120})\s*\]$/', $b, $m)) {
+            $v = video_by_slug_light($m[1]);
+            $html .= $v ? '<div class="article-video">' . view('partials/video_card', ['v' => $v]) . '</div>' : '';
+            continue;
+        }
+        if (preg_match('/^(#{2,3})\s+(.+)$/', $b, $m)) {
+            $tag = strlen($m[1]) === 2 ? 'h2' : 'h3';
+            $html .= "<$tag>" . md_inline($m[2]) . "</$tag>";
+            continue;
+        }
+        $lines = explode("\n", $b);
+        if (count(array_filter($lines, fn($l) => preg_match('/^\s*[-*]\s+/', $l))) === count($lines)) {
+            $html .= '<ul>' . implode('', array_map(fn($l) => '<li>' . md_inline((string)preg_replace('/^\s*[-*]\s+/', '', $l)) . '</li>', $lines)) . '</ul>';
+            continue;
+        }
+        if (count(array_filter($lines, fn($l) => preg_match('/^\s*\d+[.)]\s+/', $l))) === count($lines)) {
+            $html .= '<ol>' . implode('', array_map(fn($l) => '<li>' . md_inline((string)preg_replace('/^\s*\d+[.)]\s+/', '', $l)) . '</li>', $lines)) . '</ol>';
+            continue;
+        }
+        if (str_starts_with($b, '>')) {
+            $html .= '<blockquote>' . md_inline((string)preg_replace('/^>\s?/m', '', $b)) . '</blockquote>';
+            continue;
+        }
+        $html .= '<p>' . implode('<br>', array_map('md_inline', $lines)) . '</p>';
+        if (++$paras === 2) {
+            $html .= ad('in_article');
+        }
+    }
+    return $html;
+}
+
+function md_inline(string $s): string
+{
+    $s = e($s);
+    $s = (string)preg_replace_callback('/!\[([^\]]*)\]\((https:\/\/[^\s)]+)\)/', fn($m) =>
+        '<img src="' . $m[2] . '" alt="' . $m[1] . '" loading="lazy">', $s);
+    $s = (string)preg_replace_callback('/\[([^\]]+)\]\(((?:https?:\/\/|\/)[^\s)]+)\)/', function ($m) {
+        $ext = !str_starts_with($m[2], '/') && !str_starts_with(html_entity_decode($m[2]), rtrim((string)cfg('site.url'), '/'));
+        return '<a href="' . $m[2] . '"' . ($ext ? ' target="_blank" rel="noopener nofollow"' : '') . '>' . $m[1] . '</a>';
+    }, $s);
+    $s = (string)preg_replace('/\*\*(.+?)\*\*/', '<strong>$1</strong>', $s);
+    $s = (string)preg_replace('/(?<![*\w])\*(?!\s)(.+?)(?<!\s)\*(?![*\w])/', '<em>$1</em>', $s);
+    return $s;
+}

@@ -4,29 +4,62 @@ declare(strict_types=1);
 require_once ROOT . '/app/YouTube.php';
 require_once ROOT . '/app/Fetcher.php';
 require_once ROOT . '/app/AI.php';
+require_once ROOT . '/app/Sources.php';
 
-/** Ambil video untuk satu situs. Return ringkasan untuk ditampilkan. */
+/** Ambil video untuk satu situs (YouTube + sumber lain). Return ringkasan untuk ditampilkan. */
 function run_fetch_site(string $siteId, array $overrides = []): string
 {
     $site = Site::activate($siteId);
     if ($overrides) {
         $site->cfg = array_replace_recursive($site->cfg, $overrides);   // hanya untuk run ini, tidak disimpan
     }
-    if (trim((string)cfg('youtube.api_key', '')) === '') {
-        return "[$siteId] dilewati: YouTube API key belum diisi";
-    }
-    if (!array_filter((array)cfg('youtube.channels', []))) {
-        return "[$siteId] dilewati: belum ada channel";
+    $ytChannels = array_values(array_filter(array_map('trim', (array)cfg('youtube.channels', []))));
+    $others = array_values(array_filter((array)cfg('sources', []), fn($s) => trim((string)($s['value'] ?? '')) !== ''));
+    if (!$ytChannels && !$others) {
+        return "[$siteId] dilewati: belum ada channel / sumber video";
     }
     $lock = fopen($site->dir() . '/fetch.lock', 'c');
     if (!$lock || !flock($lock, LOCK_EX | LOCK_NB)) {
         return "[$siteId] dilewati: proses fetch lain masih berjalan";
     }
-    $yt = new YouTube((string)cfg('youtube.api_key'));
+    $allowed = [];
+    $failed = 0;
+    $units = 0;
     try {
-        (new Fetcher($yt))->run();
-    } catch (QuotaExceeded $e) {
-        logmsg('Berhenti, kuota habis: ' . $e->getMessage());
+        if ($ytChannels) {
+            if (trim((string)cfg('youtube.api_key', '')) === '') {
+                $failed++;
+                logmsg('YouTube dilewati: API key belum diisi');
+            } else {
+                $yt = new YouTube((string)cfg('youtube.api_key'));
+                try {
+                    $r = (new Fetcher($yt))->run();
+                    $allowed = array_merge($allowed, $r['allowed']);
+                    $failed += $r['failed'];
+                } catch (QuotaExceeded $e) {
+                    $failed++;
+                    logmsg('YouTube berhenti, kuota habis: ' . $e->getMessage());
+                } catch (Throwable $e) {
+                    $failed++;
+                    logmsg('YouTube ERROR: ' . $e->getMessage());
+                }
+                $units = $yt->units();
+            }
+        }
+        if ($others) {
+            $src = new Sources();
+            $src->run($others);
+            $allowed = array_merge($allowed, array_keys($src->allowed));
+            $failed += $src->failed;
+        }
+        if ($failed === 0) {
+            cleanup_removed_channels($allowed);
+        }
+        Fetcher::purgeInactive();
+        meta_set('last_fetch', now());
+        if (function_exists('social_autopost')) {
+            social_autopost();
+        }
     } catch (Throwable $e) {
         logmsg('ERROR: ' . $e->getMessage());
     } finally {
@@ -34,9 +67,22 @@ function run_fetch_site(string $siteId, array $overrides = []): string
         fclose($lock);
     }
     cache_clear();
-    $msg = 'Selesai. Unit API run ini: ' . $yt->units() . ' | total hari ini (key ini): ' . quota_used();
+    $msg = 'Selesai. Unit YouTube API run ini: ' . $units . ' | hari ini (key ini): ' . quota_used();
     logmsg($msg);
     return "[$siteId] $msg";
+}
+
+/** Channel/sumber yang dihapus dari pengaturan → videonya disembunyikan. */
+function cleanup_removed_channels(array $keep): void
+{
+    $keep = array_values(array_unique($keep));
+    $in = $keep ? implode(',', array_fill(0, count($keep), '?')) : "''";
+    $off = q("UPDATE videos SET is_active = 0, updated_at = ? WHERE is_active = 1 AND channel_id NOT IN ($in)", [now(), ...$keep])->rowCount();
+    q("UPDATE series SET is_active = 0, updated_at = ? WHERE is_active = 1 AND channel_id NOT IN ($in)", [now(), ...$keep]);
+    q("DELETE FROM channels WHERE id NOT IN ($in)", $keep);
+    if ($off) {
+        logmsg("$off video disembunyikan (channel/sumber sudah dihapus dari pengaturan)");
+    }
 }
 
 /** Tulis deskripsi AI untuk satu situs. Return jumlah deskripsi. */

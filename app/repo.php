@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-const VIDEO_COLS = 'v.id, v.title, v.slug, v.thumb, v.duration, v.views, v.published_at, v.channel_id, v.channel_title';
+const VIDEO_COLS = 'v.id, v.title, v.slug, v.thumb, v.duration, v.views, v.published_at, v.channel_id, v.channel_title, v.source';
 
 function q(string $sql, array $params = []): PDOStatement
 {
@@ -113,4 +113,32 @@ function channels_all(): array
 {
     return q('SELECT c.*, (SELECT COUNT(*) FROM videos v WHERE v.channel_id = c.id AND v.is_active = 1) AS video_count
               FROM channels c ORDER BY c.title')->fetchAll();
+}
+
+/* ---------- Artikel ---------- */
+
+/** @return array{0: array, 1: int} */
+function articles_list(int $page, int $per): array
+{
+    $total = (int)q("SELECT COUNT(*) FROM articles WHERE status = 'published' AND published_at <= ?", [now()])->fetchColumn();
+    $items = q("SELECT id, slug, title, excerpt, cover, published_at FROM articles WHERE status = 'published' AND published_at <= ?
+                ORDER BY published_at DESC LIMIT ? OFFSET ?", [now(), $per, ($page - 1) * $per])->fetchAll();
+    return [$items, $total];
+}
+
+function article_by_slug(string $slug): ?array
+{
+    $row = q("SELECT * FROM articles WHERE slug = ? AND status = 'published' AND published_at <= ?", [$slug, now()])->fetch();
+    return $row ?: null;
+}
+
+function articles_count(): int
+{
+    return (int)q("SELECT COUNT(*) FROM articles WHERE status = 'published' AND published_at <= ?", [now()])->fetchColumn();
+}
+
+function video_by_slug_light(string $slug): ?array
+{
+    $row = q('SELECT ' . VIDEO_COLS . ' FROM videos v WHERE v.slug = ? AND v.is_active = 1', [$slug])->fetch();
+    return $row ?: null;
 }

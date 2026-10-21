@@ -41,7 +41,45 @@ final class AI
         return trim(self::complete($prompt));
     }
 
-    private static function complete(string $prompt): string
+    /** Draf artikel (Markdown) dalam bahasa situs. Wajib dibaca & disunting manusia sebelum terbit. */
+    public static function article(string $title, string $keyword, array $videoTitles, string $notes): string
+    {
+        $lang = self::language();
+        $niche = trim((string)cfg('site.niche', '')) ?: t('_niche');
+        $list = implode("\n", array_map(fn($t) => '- ' . $t, array_slice($videoTitles, 0, 15)));
+        $prompt = <<<P
+        Write a helpful, original blog article in $lang for a website about $niche.
+
+        Article title: $title
+        Main keyword: $keyword
+        Videos available on the site that you may refer to by their exact titles:
+        $list
+
+        Notes from the editor:
+        $notes
+
+        Rules:
+        - 700 to 1000 words. Use Markdown: "## " for section headings, short paragraphs, bullet lists where useful.
+        - Be genuinely useful: explain, compare, give tips or a watching order. Natural tone, no keyword stuffing.
+        - Do NOT invent facts (release dates, cast, numbers, awards, prices). If unsure, stay general.
+        - No links, no emojis, no "click here", no calls to install apps.
+        - Do not repeat the title as a heading at the top. Output only the article body.
+        P;
+        return trim(self::complete($prompt, 2500));
+    }
+
+    private static function language(): string
+    {
+        $lang = [
+            'id' => 'Indonesian', 'en' => 'English', 'de' => 'German (natural, fluent, informal "du")',
+            'es' => 'Spanish', 'fr' => 'French', 'nl' => 'Dutch', 'zh' => 'Simplified Chinese',
+            'ko' => 'Korean', 'ja' => 'Japanese', 'hi' => 'Hindi',
+        ][site_lang()] ?? 'English';
+        $country = strtoupper((string)cfg('site.country', ''));
+        return preg_match('/^[A-Z]{2}$/', $country) ? "$lang for readers in country code $country (use local spelling and conventions)" : $lang;
+    }
+
+    private static function complete(string $prompt, int $maxTokens = 700): string
     {
         $key = (string)cfg('ai.api_key', '');
         $model = (string)cfg('ai.model', '');
@@ -51,12 +89,12 @@ final class AI
         if (cfg('ai.provider') === 'anthropic') {
             $res = self::post(cfg('ai.endpoint') ?: 'https://api.anthropic.com/v1/messages', [
                 'x-api-key: ' . $key, 'anthropic-version: 2023-06-01',
-            ], ['model' => $model, 'max_tokens' => 700, 'messages' => [['role' => 'user', 'content' => $prompt]]]);
+            ], ['model' => $model, 'max_tokens' => $maxTokens, 'messages' => [['role' => 'user', 'content' => $prompt]]]);
             return (string)($res['content'][0]['text'] ?? '');
         }
         $res = self::post(cfg('ai.endpoint') ?: 'https://api.openai.com/v1/chat/completions', [
             'Authorization: Bearer ' . $key,
-        ], ['model' => $model, 'max_tokens' => 700, 'messages' => [['role' => 'user', 'content' => $prompt]]]);
+        ], ['model' => $model, 'max_tokens' => $maxTokens, 'messages' => [['role' => 'user', 'content' => $prompt]]]);
         return (string)($res['choices'][0]['message']['content'] ?? '');
     }
 

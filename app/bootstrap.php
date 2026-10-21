@@ -17,3 +17,4 @@ require ROOT . '/app/helpers.php';
 require ROOT . '/app/core.php';
 require ROOT . '/app/db.php';
 require ROOT . '/app/repo.php';
+require ROOT . '/app/social.php';

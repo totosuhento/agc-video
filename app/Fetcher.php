@@ -12,7 +12,8 @@ final class Fetcher
 
     public function __construct(private YouTube $yt) {}
 
-    public function run(): void
+    /** @return array{allowed: string[], failed: int} */
+    public function run(): array
     {
         $configured = array_values(array_filter(array_map('trim', (array)cfg('youtube.channels', []))));
         $failed = 0;
@@ -33,18 +34,6 @@ final class Fetcher
             }
         }
 
-        // Channel yang dihapus dari pengaturan → videonya disembunyikan (hanya bila semua channel berhasil dicek)
-        if ($failed === 0) {
-            $keep = array_keys($this->allowed);
-            $in = $keep ? implode(',', array_fill(0, count($keep), '?')) : "''";
-            $off = q("UPDATE videos SET is_active = 0, updated_at = ? WHERE is_active = 1 AND channel_id NOT IN ($in)", [now(), ...$keep])->rowCount();
-            q("UPDATE series SET is_active = 0, updated_at = ? WHERE is_active = 1 AND channel_id NOT IN ($in)", [now(), ...$keep]);
-            q("DELETE FROM channels WHERE id NOT IN ($in)", $keep);
-            if ($off) {
-                logmsg("$off video disembunyikan (channel sudah dihapus dari pengaturan)");
-            }
-        }
-
         foreach (array_keys($this->allowed) as $cid) {
             foreach (['syncUploads', 'syncSeries'] as $step) {
                 try {
@@ -58,8 +47,7 @@ final class Fetcher
         }
 
         $this->refreshOld();
-        $this->purgeInactive();
-        meta_set('last_fetch', now());
+        return ['allowed' => array_keys($this->allowed), 'failed' => $failed];
     }
 
     private function syncChannel(string $handle): ?array
@@ -78,8 +66,8 @@ final class Fetcher
         }
         $sn = $item['snippet'];
         $th = $sn['thumbnails'] ?? [];
-        q('INSERT INTO channels (id, handle, title, slug, description, thumb, uploads_playlist, subscribers, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        q('INSERT INTO channels (id, handle, title, slug, description, thumb, uploads_playlist, subscribers, updated_at, source, url)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, \'youtube\', \'https://www.youtube.com/channel/\' || ?)
            ON CONFLICT(id) DO UPDATE SET handle = excluded.handle, title = excluded.title, description = excluded.description,
              thumb = excluded.thumb, uploads_playlist = excluded.uploads_playlist, subscribers = excluded.subscribers,
              updated_at = excluded.updated_at', [
@@ -92,6 +80,7 @@ final class Fetcher
             $item['contentDetails']['relatedPlaylists']['uploads'] ?? '',
             (int)($item['statistics']['subscriberCount'] ?? 0),
             now(),
+            $item['id'],
         ]);
         logmsg("Channel diperbarui: {$sn['title']}");
         return q('SELECT * FROM channels WHERE id = ?', [$item['id']])->fetch() ?: null;
@@ -226,7 +215,7 @@ final class Fetcher
     /** Refresh data video tertua (statistik, status). Video yang dihapus/privat → nonaktif. */
     private function refreshOld(): void
     {
-        $ids = q('SELECT id FROM videos WHERE is_active = 1 ORDER BY updated_at ASC LIMIT ?',
+        $ids = q("SELECT id FROM videos WHERE is_active = 1 AND source = 'youtube' ORDER BY updated_at ASC LIMIT ?",
             [(int)cfg('youtube.refresh_per_run', 1000)])->fetchAll(PDO::FETCH_COLUMN);
         $off = 0;
         foreach (array_chunk($ids, 50) as $chunk) {
@@ -252,7 +241,7 @@ final class Fetcher
     }
 
     /** Kebijakan YouTube API: data yang tidak dipakai/tidak di-refresh tidak disimpan > 30 hari. */
-    private function purgeInactive(): void
+    public static function purgeInactive(): void
     {
         $cut = gmdate('Y-m-d H:i:s', time() - 30 * 86400);
         q('DELETE FROM series_videos WHERE video_id IN (SELECT id FROM videos WHERE is_active = 0 AND updated_at < ?)', [$cut]);
@@ -310,8 +299,8 @@ final class Fetcher
         $th = $sn['thumbnails'] ?? [];
         $tags = implode(', ', array_slice((array)($sn['tags'] ?? []), 0, 15));
         q('INSERT INTO videos (id, channel_id, channel_title, title, slug, description, thumb, duration, views, likes, tags,
-                               search, published_at, is_active, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                               search, published_at, is_active, created_at, updated_at, source, embed_url, source_url)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, \'youtube\', \'https://www.youtube-nocookie.com/embed/\' || ?, \'https://www.youtube.com/watch?v=\' || ?)
            ON CONFLICT(id) DO UPDATE SET channel_title = excluded.channel_title, title = excluded.title,
              description = excluded.description, thumb = excluded.thumb, duration = excluded.duration,
              views = excluded.views, likes = excluded.likes, tags = excluded.tags, search = excluded.search,
@@ -321,7 +310,7 @@ final class Fetcher
             $th['maxres']['url'] ?? $th['high']['url'] ?? yt_thumb($item['id']),
             $duration, (int)($item['statistics']['viewCount'] ?? 0), (int)($item['statistics']['likeCount'] ?? 0),
             $tags, mb_strtolower(($sn['title'] ?? '') . ' ' . $tags), isset($sn['publishedAt']) ? gmdate('Y-m-d H:i:s', strtotime($sn['publishedAt'])) : now(),
-            $active ? 1 : 0, now(), now(),
+            $active ? 1 : 0, now(), now(), $item['id'], $item['id'],
         ]);
         return $active;
     }

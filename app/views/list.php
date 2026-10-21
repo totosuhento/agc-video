@@ -7,8 +7,9 @@ $channel ??= null;
   <?php if ($channel['thumb']): ?><img src="<?= e($channel['thumb']) ?>" alt="" width="72" height="72"><?php endif; ?>
   <div>
     <h1><?= e($heading) ?></h1>
-    <p class="muted"><span class="badge"><?= e(t('official_channel')) ?></span>
-      <a href="https://www.youtube.com/channel/<?= e(rawurlencode($channel['id'])) ?>" target="_blank" rel="noopener nofollow">YouTube ↗</a></p>
+    <p class="muted"><span class="badge"><?= e(is_public_domain_source((string)($channel['source'] ?? '')) ? t('public_domain') : t('official_channel')) ?></span>
+      <?php $csrc = (string)($channel['source'] ?? '') ?: 'youtube'; $curl = (string)($channel['url'] ?? '') ?: 'https://www.youtube.com/channel/' . rawurlencode($channel['id']); ?>
+      <a href="<?= e($curl) ?>" target="_blank" rel="noopener nofollow"><?= e(source_name($csrc)) ?> ↗</a></p>
   </div>
 </header>
 <?php else: ?>

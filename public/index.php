@@ -81,6 +81,9 @@ $routes = [
     '#^/sitemap-(pages|series|videos)-(\d+)\.xml$#' => 'sitemap_part',
     '#^/robots\.txt$#'                        => 'robots_txt',
     '#^/ads\.txt$#'                           => 'ads_txt_page',
+    '#^/articles$#'                           => 'page_articles',
+    '#^/article/([a-z0-9-]{1,120})$#'         => 'page_article',
+    '#^/([A-Za-z0-9_.-]{1,60}\.js)$#'         => 'push_sw',
 ];
 
 $res = null;

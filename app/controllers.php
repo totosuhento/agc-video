@@ -31,7 +31,7 @@ function page_home(): array
     [$popular] = videos_list('popular', 1, 12);
     [$series] = series_list(1, 8);
     $content = view('home', ['latest' => $latest, 'popular' => $popular, 'series' => $series, 'channels' => channels_all(),
-        'topics' => topics_with_videos()]);
+        'topics' => topics_with_videos(), 'articles' => articles_list(1, 3)[0]]);
     $intro = trim((string)cfg('site.intro', ''));
     return html($content, [
         'title' => cfg('site.name') . ' – ' . tagline(),
@@ -71,10 +71,10 @@ function page_video(string $slug): array
                 '@type' => 'VideoObject',
                 'name' => $v['title'],
                 'description' => $metaDesc,
-                'thumbnailUrl' => [$v['thumb'] ?: yt_thumb($v['id'])],
+                'thumbnailUrl' => array_values(array_filter([video_thumb($v, 'hqdefault')])),
                 'uploadDate' => date('c', strtotime($v['published_at'] . ' UTC')),
                 'duration' => seconds_to_iso((int)$v['duration']),
-                'embedUrl' => 'https://www.youtube.com/embed/' . $v['id'],
+                'embedUrl' => video_embed_url($v),
                 'interactionStatistic' => ['@type' => 'InteractionCounter',
                     'interactionType' => ['@type' => 'WatchAction'], 'userInteractionCount' => (int)$v['views']],
                 'author' => ['@type' => 'Organization', 'name' => $v['channel_title']],
@@ -95,8 +95,9 @@ function page_video(string $slug): array
         'title' => $v['title'] . ' | ' . cfg('site.name'),
         'description' => $metaDesc,
         'canonical' => url('video/' . $v['slug']),
-        'image' => $v['thumb'] ?: yt_thumb($v['id']),
+        'image' => (video_source($v) === 'youtube' ? ($v['thumb'] ?: yt_thumb($v['id'])) : (string)$v['thumb']) ?: null,
         'og_type' => 'video.other',
+        'hreflang_video' => $v['id'],
         'schema' => $schema,
     ]);
 }
@@ -236,6 +237,65 @@ function topics_with_videos(): array
     return $memo;
 }
 
+function page_articles(): array
+{
+    $page = current_page();
+    [$items, $total] = articles_list($page, 12);
+    if (!$items && $page > 1) {
+        return not_found();
+    }
+    return html(view('articles', ['items' => $items, 'page' => $page, 'pages' => (int)ceil($total / 12)]), [
+        'title' => t('articles') . ($page > 1 ? ' – ' . t('page_n', $page) : '') . ' | ' . cfg('site.name'),
+        'description' => t('articles_meta', cfg('site.name')),
+        'canonical' => url('articles') . ($page > 1 ? '?page=' . $page : ''),
+    ]);
+}
+
+function page_article(string $slug): array
+{
+    $a = article_by_slug($slug);
+    if (!$a) {
+        return not_found();
+    }
+    $related = trim((string)$a['keyword']) !== '' ? videos_search((string)$a['keyword'], 1, 8)[0] : [];
+    $more = array_values(array_filter(articles_list(1, 4)[0], fn($x) => $x['slug'] !== $slug));
+    $desc = excerpt(trim((string)$a['excerpt']) ?: (string)preg_replace('/[#*\[\]>]/', '', (string)$a['body']), 158);
+    $image = (string)($a['cover'] ?: ($related ? video_thumb($related[0], 'hqdefault') : ''));
+    $schema = [
+        '@context' => 'https://schema.org',
+        '@graph' => [
+            array_filter([
+                '@type' => 'BlogPosting', 'headline' => $a['title'], 'description' => $desc,
+                'image' => $image ?: null,
+                'datePublished' => date('c', strtotime($a['published_at'] . ' UTC')),
+                'dateModified' => date('c', strtotime($a['updated_at'] . ' UTC')),
+                'author' => ['@type' => 'Organization', 'name' => cfg('site.name'), 'url' => url()],
+                'publisher' => ['@type' => 'Organization', 'name' => cfg('site.name')],
+                'mainEntityOfPage' => url('article/' . $a['slug']),
+            ]),
+            breadcrumb_schema([[t('home'), url()], [t('articles'), url('articles')], [$a['title'], url('article/' . $a['slug'])]]),
+        ],
+    ];
+    return html(view('article', ['a' => $a, 'related' => $related, 'more' => array_slice($more, 0, 3), 'image' => $image]), [
+        'title' => $a['title'] . ' | ' . cfg('site.name'),
+        'description' => $desc,
+        'canonical' => url('article/' . $a['slug']),
+        'image' => $image ?: null,
+        'og_type' => 'article',
+        'schema' => $schema,
+    ]);
+}
+
+/** Service worker push notification (OneSignal, Monetag, dll.) */
+function push_sw(string $name): array
+{
+    if ($name !== push_sw_name() || trim((string)cfg('push.sw_code', '')) === '') {
+        return not_found();
+    }
+    header('Service-Worker-Allowed: /');
+    return ['status' => 200, 'type' => 'application/javascript; charset=utf-8', 'body' => (string)cfg('push.sw_code')];
+}
+
 function ads_txt_page(): array
 {
     return ['status' => 200, 'type' => 'text/plain; charset=utf-8', 'body' => ads_txt()];
@@ -297,6 +357,13 @@ function sitemap_part(string $kind, string $n): array
         }
         foreach (array_keys(topics_with_videos()) as $slug) {
             $urls[] = [url('topic/' . $slug), null];
+        }
+        if (articles_count() > 0) {
+            $urls[] = [url('articles'), null];
+            foreach (q("SELECT slug, updated_at FROM articles WHERE status = 'published' AND published_at <= ? ORDER BY published_at DESC LIMIT 5000",
+                [now()])->fetchAll() as $r) {
+                $urls[] = [url('article/' . $r['slug']), $r['updated_at']];
+            }
         }
     } elseif ($kind === 'series') {
         foreach (q('SELECT slug, updated_at FROM series WHERE is_active = 1 AND video_count > 1 ORDER BY published_at DESC LIMIT ? OFFSET ?',

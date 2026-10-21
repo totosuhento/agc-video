@@ -21,9 +21,41 @@ function db(): PDO
 function db_migrate(PDO $pdo): void
 {
     $version = (int)$pdo->query('PRAGMA user_version')->fetchColumn();
-    if ($version >= 1) {
-        return;
+    if ($version < 1) {
+        db_migrate_v1($pdo);
     }
+    if ($version < 2) {
+        // v2: banyak sumber video, artikel, auto-post
+        $pdo->exec(<<<SQL
+        ALTER TABLE videos ADD COLUMN source TEXT DEFAULT 'youtube';
+        ALTER TABLE videos ADD COLUMN embed_url TEXT;
+        ALTER TABLE videos ADD COLUMN source_url TEXT;
+        ALTER TABLE videos ADD COLUMN posted_at TEXT;
+        ALTER TABLE channels ADD COLUMN source TEXT DEFAULT 'youtube';
+        ALTER TABLE channels ADD COLUMN url TEXT;
+        CREATE INDEX IF NOT EXISTS idx_videos_source ON videos(source, is_active, updated_at);
+        CREATE TABLE IF NOT EXISTS articles (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            slug TEXT UNIQUE NOT NULL,
+            title TEXT NOT NULL,
+            excerpt TEXT,
+            body TEXT,
+            cover TEXT,
+            keyword TEXT,
+            status TEXT DEFAULT 'draft',
+            published_at TEXT,
+            created_at TEXT,
+            updated_at TEXT,
+            posted_at TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_articles_pub ON articles(status, published_at DESC);
+        PRAGMA user_version = 2;
+        SQL);
+    }
+}
+
+function db_migrate_v1(PDO $pdo): void
+{
     $pdo->exec(<<<SQL
     CREATE TABLE IF NOT EXISTS settings (k TEXT PRIMARY KEY, v TEXT);
     CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT);

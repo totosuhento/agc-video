@@ -1,7 +1,15 @@
 # AGC Video
 
 Mesin AGC (Auto Generated Content) **video universal**: satu script untuk banyak situs video dengan niche, bahasa, dan iklan berbeda.
-Video diambil otomatis dari **channel YouTube resmi** lewat YouTube Data API dan diputar dengan **embed resmi YouTube** (tidak ada video yang di-download/di-host).
+Video diambil otomatis dari **sumber resmi / legal** dan diputar dengan **player resmi platformnya** (tidak ada video yang di-download/di-host):
+
+| Sumber | Butuh API key? | Cocok untuk |
+|---|---|---|
+| YouTube (channel resmi) | Ya (gratis) | semua niche |
+| Dailymotion (akun resmi penerbit) | Tidak | berita, TV, olahraga, hiburan |
+| Internet Archive (otomatis hanya *public domain*/CC0) | Tidak | film klasik, horor lawas, dokumenter sejarah |
+| NASA Image & Video Library | Tidak | sains, luar angkasa, edukasi |
+| TikTok (link video, embed resmi) | Tidak | pelengkap klip pendek dari akun resmi |
 
 Dibangun dari dua AGC sebelumnya (Drama China & Tutorial Software Jerman) sebagai referensi.
 
@@ -16,7 +24,11 @@ Dibangun dari dua AGC sebelumnya (Drama China & Tutorial Software Jerman) sebaga
   - **Mode iklan per situs**: *AdSense saja* (aman), *CPM/CPA*, atau *Campuran* (dengan peringatan).
 - **10 bahasa tampilan**: Indonesia, Inggris, Jerman, Spanyol, Prancis, Belanda, Mandarin (sederhana), Korea, Jepang, Hindi — termasuk halaman About, Privacy, Disclaimer, Contact (Jerman: Datenschutz DSGVO + Impressum).
 - **Target negara** (mis. Kanada `en-CA`/`fr-CA`, Swiss `de-CH`/`fr-CH`): atribut bahasa HTML, `og:locale`, format tanggal & angka lokal.
-- **Halaman topik dari keyword** (`/topic/...`), sitemap, schema VideoObject/Breadcrumb/ItemList, canonical, robots.txt.
+- **Halaman topik dari keyword** (`/topic/...`), sitemap, schema VideoObject/Breadcrumb/ItemList, canonical, robots.txt, `max-image-preview:large` (Google Discover).
+- **Modul artikel** (`/articles`): editor di admin, format Markdown sederhana, sisip kartu video `[video:slug]`, jadwal terbit, slot iklan *in-article* otomatis, schema BlogPosting, draf AI opsional.
+- **Situs saudara multi-bahasa**: isi nama grup yang sama di beberapa situs (mis. drakor EN/ES/DE) → otomatis `hreflang` + pemilih bahasa di footer.
+- **Tombol share** ringan (WhatsApp, Telegram, Facebook, X, Pinterest, Reddit, LinkedIn, LINE, VK, Email, salin link, share bawaan HP) tanpa script pihak ketiga.
+- **Auto-post ke channel Telegram** untuk video & artikel baru, dan **push notification** (OneSignal / Monetag / PropellerAds) dengan service worker yang dilayani langsung oleh script.
 - Filter video: durasi minimal (buang Shorts), kata yang wajib/terlarang di judul, otomatis sembunyikan video privat/dihapus/tidak bisa di-embed/18+.
 - Deskripsi unik dengan AI (opsional; Anthropic atau API kompatibel OpenAI).
 - Cron otomatis (Docker), cron biasa (VPS/cPanel), atau **cron lewat URL** (hosting tanpa Cron Jobs).
@@ -37,10 +49,12 @@ Setelah terpasang, semua cara sama: buka **`https://domain-anda/install`** → b
 1. Arahkan DNS domain baru ke server yang sama.
 2. Tambahkan domain di server (Docker+Caddy: `Caddyfile`; cPanel: *Addon Domain* ke folder yang sama; Nusapod: tambah domain di container).
 3. Admin → **Situs** → **+ Tambah situs baru** → isi domain, judul, kategori (preset), bahasa, target negara, keyword, mode iklan.
-4. Admin → **Channel** → cari / tempel channel YouTube **resmi** → tambahkan.
+4. Admin → **Sumber video** → cari / tempel channel YouTube **resmi**, atau tambah sumber Dailymotion / Internet Archive / NASA / TikTok.
 5. Admin → **Iklan** → tempel kode AdSense / CPM / CPA.
 6. Dashboard → **Ambil video sekarang**. Selanjutnya cron mengambil video baru tiap jam.
-7. Daftarkan `https://domain/sitemap.xml` di Google Search Console.
+7. Admin → **Artikel** → tulis minimal 3–5 artikel orisinal sebelum mendaftar AdSense.
+8. Admin → **Sosial** → atur tombol share, Telegram, push.
+9. Daftarkan `https://domain/sitemap.xml` di Google Search Console.
 
 ## Perintah terminal (opsional)
 

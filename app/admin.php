@@ -157,6 +157,7 @@ function admin_dispatch(string $path): void
         '/admin/ads' => 'page_ads', '/admin/sites' => 'page_sites', '/admin/sites/new' => 'page_site_new',
         '/admin/global' => 'page_global', '/admin/switch' => 'action_switch', '/admin/fetch' => 'action_fetch',
         '/admin/cache' => 'action_cache', '/admin/preset' => 'action_preset',
+        '/admin/articles' => 'page_articles_admin', '/admin/articles/edit' => 'page_article_edit', '/admin/social' => 'page_social',
     ];
     if (!isset($routes[$path])) {
         http_response_code(404);
@@ -274,8 +275,9 @@ function page_dashboard(): void
 {
     $st = stats();
     $checks = [
-        ['YouTube API key terisi', trim((string)cfg('youtube.api_key', '')) !== '', '/admin/settings#sumber'],
-        ['Minimal satu channel', (bool)array_filter((array)cfg('youtube.channels', [])), '/admin/channels'],
+        ['YouTube API key terisi (bila memakai YouTube)', trim((string)cfg('youtube.api_key', '')) !== '' || !array_filter((array)cfg('youtube.channels', [])), '/admin/settings#sumber'],
+        ['Minimal satu channel / sumber video', (bool)array_filter((array)cfg('youtube.channels', [])) || site_uses_other_sources(), '/admin/channels'],
+        ['Minimal 3 artikel orisinal (penting untuk approval AdSense)', articles_count() >= 3, '/admin/articles'],
         ['Email kontak terisi', trim((string)cfg('site.contact_email', '')) !== '', '/admin/settings'],
         ['Keyword situs (halaman topik)', (bool)cfg('site.keywords'), '/admin/settings'],
         ['Kode iklan / AdSense', adsense_client() !== '' || trim((string)cfg('ads.top') . cfg('ads.below_player') . cfg('ads.head') . cfg('ads.body_end')) !== '', '/admin/ads'],
@@ -369,6 +371,7 @@ function page_settings(): void
         $c['site']['item'] = trim((string)post('site.item'));
         $c['site']['keywords'] = array_slice(str_list((string)post('site.keywords')), 0, 50);
         $c['site']['intro'] = trim((string)post('site.intro'));
+        $c['site']['group'] = (string)preg_replace('/[^a-z0-9_-]/', '', strtolower(trim((string)post('site.group'))));
         $c['site']['theme'] = post('site.theme') === 'light' ? 'light' : 'dark';
         $c['site']['accent'] = preg_match('/^#[0-9a-fA-F]{6}$/', (string)post('site.accent')) ? (string)post('site.accent') : $c['site']['accent'];
         $c['site']['contact_email'] = filter_var(trim((string)post('site.contact_email')), FILTER_VALIDATE_EMAIL) ?: '';
@@ -422,6 +425,8 @@ function page_settings(): void
         <label>Tagline <small>(kosong = otomatis)</small><input name="site[tagline]" value="<?= e($c['site']['tagline']) ?>" placeholder="<?= e(tagline()) ?>"></label>
         <label>Keyword website <small>(satu per baris; tiap keyword jadi halaman topik /topic/... bila ada video yang cocok)</small>
           <textarea name="site[keywords]" rows="4"><?= e(implode("\n", (array)$c['site']['keywords'])) ?></textarea></label>
+        <label>Grup situs saudara <small>(opsional; isi nama grup yang SAMA di situs lain dengan niche sama tapi bahasa berbeda, mis. "kdrama" → otomatis hreflang + pemilih bahasa)</small>
+          <input name="site[group]" value="<?= e($c['site']['group']) ?>" placeholder="kdrama"></label>
         <label>Teks pembuka beranda <small>(opsional, tulis sendiri agar situs punya konten orisinal)</small>
           <textarea name="site[intro]" rows="3"><?= e($c['site']['intro']) ?></textarea></label>
         <div class="grid3">
@@ -502,6 +507,29 @@ function page_channels(): void
         $act = (string)post('act');
         $c = $site->cfg;
         try {
+            if ($act === 'src_add') {
+                $type = (string)post('type');
+                $value = trim(str_replace("\r", '', (string)post('value')));
+                if (!isset(Sources::TYPES[$type]) || $value === '') {
+                    throw new RuntimeException('Pilih jenis sumber dan isi nilainya.');
+                }
+                if ($type === 'tiktok' && !preg_match('~tiktok\.com/@[\w.]+/video/\d+~', $value)) {
+                    throw new RuntimeException('Isi link video TikTok lengkap, mis. https://www.tiktok.com/@akun/video/123...');
+                }
+                $c['sources'][] = ['type' => $type, 'value' => $value];
+                $site->save($c);
+                flash('Sumber ' . Sources::NAMES[$type] . ' ditambahkan. Klik "Ambil video sekarang" di Dashboard.');
+                redirect('/admin/channels');
+            }
+            if ($act === 'src_remove') {
+                $i = (int)post('i', -1);
+                if (isset($c['sources'][$i])) {
+                    array_splice($c['sources'], $i, 1);
+                    $site->save($c);
+                    flash('Sumber dihapus. Videonya akan disembunyikan pada pengambilan berikutnya.');
+                }
+                redirect('/admin/channels');
+            }
             if ($act === 'remove') {
                 $c['youtube']['channels'] = array_values(array_diff((array)$c['youtube']['channels'], [(string)post('ref')]));
                 $site->save($c);
@@ -575,7 +603,7 @@ function page_channels(): void
     ob_start(); ?>
     <p class="help">Gunakan hanya <b>channel resmi</b> milik pemegang hak (studio, stasiun TV, brand, kreator aslinya). Channel reupload berisiko klaim hak cipta dan merusak reputasi situs.</p>
 
-    <h2>Channel aktif (<?= count($current) ?>)</h2>
+    <h2>YouTube – channel aktif (<?= count($current) ?>)</h2>
     <?php if (!$current): ?><p class="muted">Belum ada channel. Tambahkan di bawah.</p><?php else: ?>
     <table class="tbl">
       <tr><th>Channel</th><th>Judul</th><th>Video tampil</th><th>Status</th><th></th></tr>
@@ -593,7 +621,34 @@ function page_channels(): void
     </table>
     <?php endif; ?>
 
-    <h2>Tambah manual</h2>
+    <h2>Sumber lain (tanpa API key)</h2>
+    <?php $srcs = (array)cfg('sources', []); ?>
+    <?php if ($srcs): ?>
+    <table class="tbl">
+      <tr><th>Jenis</th><th>Nilai</th><th>Video tampil</th><th></th></tr>
+      <?php foreach ($srcs as $i => $sr):
+          $n = (int)q("SELECT COUNT(*) FROM videos WHERE is_active = 1 AND source = ?", [$sr['type']])->fetchColumn(); ?>
+        <tr><td><?= e(Sources::NAMES[$sr['type']] ?? $sr['type']) ?></td><td><code><?= e(excerpt((string)$sr['value'], 90)) ?></code></td><td><?= $n ?></td>
+          <td><form method="post"><?= csrf_field() ?><input type="hidden" name="act" value="src_remove"><input type="hidden" name="i" value="<?= (int)$i ?>"><button class="link danger" onclick="return confirm('Hapus sumber ini?')">hapus</button></form></td></tr>
+      <?php endforeach; ?>
+    </table>
+    <?php endif; ?>
+    <form method="post" class="form">
+      <?= csrf_field() ?><input type="hidden" name="act" value="src_add">
+      <div class="grid2">
+        <label>Jenis sumber<select name="type" id="srctype"><?php foreach (Sources::TYPES as $k => $lbl): ?><option value="<?= $k ?>"><?= e($lbl) ?></option><?php endforeach; ?></select></label>
+        <label>Nilai<textarea name="value" rows="2" required id="srcval"></textarea></label>
+      </div>
+      <ul class="help" id="srchelp">
+        <li><b>Dailymotion</b>: nama akun atau link profil resmi, mis. <code>https://www.dailymotion.com/namaakun</code>. Gunakan hanya akun milik pemegang hak (stasiun TV, media, studio).</li>
+        <li><b>Internet Archive</b>: kata kunci atau query, mis. <code>collection:feature_films AND subject:horror</code> atau <code>nosferatu</code>. Otomatis hanya mengambil film berlisensi <i>public domain</i>/CC0. Tetap cek ulang sebelum dimonetisasi.</li>
+        <li><b>NASA</b>: kata kunci (bahasa Inggris), mis. <code>mars rover</code>, <code>apollo 11</code>. Konten bertanda hak cipta pihak ketiga dilewati otomatis. Jangan pakai logo NASA atau mengesankan dukungan NASA.</li>
+        <li><b>TikTok</b>: satu atau beberapa link video (satu per baris) dari akun resmi. Tidak ada pengambilan otomatis; tambahkan link baru kapan saja.</li>
+      </ul>
+      <button class="btn">Tambah sumber</button>
+    </form>
+
+    <h2>YouTube – tambah manual</h2>
     <form method="post" class="form">
       <?= csrf_field() ?><input type="hidden" name="act" value="add">
       <label>Link channel, @handle, atau ID (UC...) — satu per baris
@@ -601,7 +656,7 @@ function page_channels(): void
       <button class="btn">Tambah</button>
     </form>
 
-    <h2>Cari channel</h2>
+    <h2>YouTube – cari channel</h2>
     <form method="post" class="form inline">
       <?= csrf_field() ?><input type="hidden" name="act" value="search">
       <label>Kata kunci<input name="q" value="<?= e($query) ?>" required></label>
@@ -632,7 +687,7 @@ function page_channels(): void
       </form>
       <?php endif; ?>
     <?php endif;
-    echo admin_layout('Channel YouTube', (string)ob_get_clean());
+    echo admin_layout('Sumber video', (string)ob_get_clean());
 }
 
 /* ================= Iklan ================= */
@@ -645,6 +700,7 @@ function page_ads(): void
         'top' => ['Atas halaman', 'Banner 728×90 / responsif.'],
         'below_player' => ['Di bawah player video', 'Posisi dengan CTR tertinggi.'],
         'in_list' => ['Di tengah daftar video', 'Native / in-feed.'],
+        'in_article' => ['Di dalam artikel', 'Muncul setelah paragraf ke-2 setiap artikel (in-article).'],
         'sidebar' => ['Sidebar halaman video', '300×250 / 300×600.'],
         'footer' => ['Bawah halaman', 'Banner.'],
     ];
@@ -910,6 +966,208 @@ function page_global(): void
     echo admin_layout('Pengaturan global', (string)ob_get_clean());
 }
 
+/* ================= Artikel ================= */
+
+function page_articles_admin(): void
+{
+    if (is_post() && post('act') === 'delete') {
+        q('DELETE FROM articles WHERE id = ?', [(int)post('id')]);
+        cache_clear();
+        flash('Artikel dihapus.');
+        redirect('/admin/articles');
+    }
+    $rows = q('SELECT id, slug, title, status, published_at, updated_at, length(body) AS len FROM articles ORDER BY COALESCE(published_at, created_at) DESC')->fetchAll();
+    $base = rtrim((string)cfg('site.url'), '/');
+    ob_start(); ?>
+    <p><a class="btn" href="/admin/articles/edit">+ Tulis artikel</a></p>
+    <p class="help">Artikel orisinal adalah pembeda utama dari situs AGC biasa: AdSense, Mediavine, dan Raptive menilai keaslian konten.
+      Tulis panduan, daftar rekomendasi, urutan menonton, penjelasan ending, atau "cara nonton legal". Draf AI boleh dipakai sebagai awal, tapi <b>sunting dan tambah pendapat Anda sendiri</b> sebelum terbit.</p>
+    <?php if (!$rows): ?><p class="muted">Belum ada artikel.</p><?php else: ?>
+    <table class="tbl">
+      <tr><th>Judul</th><th>Status</th><th>Terbit</th><th>Panjang</th><th></th></tr>
+      <?php foreach ($rows as $r): ?>
+        <tr>
+          <td><a href="/admin/articles/edit?id=<?= (int)$r['id'] ?>"><b><?= e($r['title']) ?></b></a><br><small class="muted">/article/<?= e($r['slug']) ?></small></td>
+          <td><?= $r['status'] === 'published' ? (strtotime($r['published_at'] . ' UTC') > time() ? '⏰ terjadwal' : '✅ terbit') : '📝 draf' ?></td>
+          <td><?= e((string)$r['published_at']) ?></td>
+          <td><?= number_format((int)$r['len']) ?> karakter</td>
+          <td>
+            <?php if ($r['status'] === 'published'): ?><a class="link" href="<?= e($base) ?>/article/<?= e($r['slug']) ?>" target="_blank" rel="noopener">lihat</a> · <?php endif; ?>
+            <form method="post" class="inl"><?= csrf_field() ?><input type="hidden" name="act" value="delete"><input type="hidden" name="id" value="<?= (int)$r['id'] ?>"><button class="link danger" onclick="return confirm('Hapus artikel ini?')">hapus</button></form>
+          </td>
+        </tr>
+      <?php endforeach; ?>
+    </table>
+    <?php endif;
+    echo admin_layout('Artikel', (string)ob_get_clean());
+}
+
+function page_article_edit(): void
+{
+    $id = (int)($_GET['id'] ?? post('id', 0));
+    $a = $id ? (q('SELECT * FROM articles WHERE id = ?', [$id])->fetch() ?: null) : null;
+    $form = [
+        'title' => (string)($a['title'] ?? ''), 'slug' => (string)($a['slug'] ?? ''), 'excerpt' => (string)($a['excerpt'] ?? ''),
+        'body' => (string)($a['body'] ?? ''), 'cover' => (string)($a['cover'] ?? ''), 'keyword' => (string)($a['keyword'] ?? ''),
+        'status' => (string)($a['status'] ?? 'draft'),
+        'published_at' => (string)($a['published_at'] ?? ''), 'notes' => '',
+    ];
+    if (is_post()) {
+        foreach (['title', 'slug', 'excerpt', 'body', 'cover', 'keyword', 'status', 'published_at', 'notes'] as $k) {
+            $form[$k] = trim(str_replace("\r", '', (string)post($k)));
+        }
+        if (post('act') === 'ai') {
+            try {
+                if ($form['title'] === '') {
+                    throw new RuntimeException('Isi judul dulu.');
+                }
+                $titles = $form['keyword'] !== '' ? array_column(videos_search($form['keyword'], 1, 15)[0], 'title') : [];
+                $form['body'] = AI::article($form['title'], $form['keyword'], $titles, $form['notes']);
+                if ($form['excerpt'] === '') {
+                    $form['excerpt'] = excerpt((string)preg_replace('/[#*>\[\]]/', '', $form['body']), 155);
+                }
+                flash('Draf AI dibuat. Baca, perbaiki, dan tambahkan pengalaman/pendapat Anda sebelum menerbitkan.');
+            } catch (Throwable $e) {
+                flash('AI gagal: ' . $e->getMessage() . ' (atur AI di menu Global / Pengaturan)', 'err');
+            }
+        } else {
+            try {
+                if ($form['title'] === '' || $form['body'] === '') {
+                    throw new RuntimeException('Judul dan isi wajib diisi.');
+                }
+                $slug = slugify($form['slug'] !== '' ? $form['slug'] : $form['title'], 90);
+                $dup = q('SELECT id FROM articles WHERE slug = ? AND id != ?', [$slug, $id])->fetchColumn();
+                if ($dup) {
+                    $slug .= '-' . substr(md5((string)microtime(true)), 0, 4);
+                }
+                $status = $form['status'] === 'published' ? 'published' : 'draft';
+                $pub = $form['published_at'] !== '' && strtotime($form['published_at']) ? gmdate('Y-m-d H:i:s', (int)strtotime($form['published_at'] . ' UTC')) : null;
+                if ($status === 'published' && !$pub) {
+                    $pub = now();
+                }
+                $cover = preg_match('~^https://\S+$~i', $form['cover']) ? $form['cover'] : '';
+                if ($id && $a) {
+                    q('UPDATE articles SET slug = ?, title = ?, excerpt = ?, body = ?, cover = ?, keyword = ?, status = ?, published_at = ?, updated_at = ? WHERE id = ?',
+                        [$slug, $form['title'], $form['excerpt'], $form['body'], $cover, $form['keyword'], $status, $pub, now(), $id]);
+                } else {
+                    q('INSERT INTO articles (slug, title, excerpt, body, cover, keyword, status, published_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                        [$slug, $form['title'], $form['excerpt'], $form['body'], $cover, $form['keyword'], $status, $pub, now(), now()]);
+                    $id = (int)db()->lastInsertId();
+                }
+                cache_clear();
+                flash($status === 'published' ? 'Artikel diterbitkan.' : 'Draf disimpan.');
+                redirect('/admin/articles/edit?id=' . $id);
+            } catch (Throwable $e) {
+                flash($e->getMessage(), 'err');
+            }
+        }
+    }
+    $base = rtrim((string)cfg('site.url'), '/');
+    ob_start(); ?>
+    <p><a href="/admin/articles">← Semua artikel</a><?php if ($a && $a['status'] === 'published'): ?> · <a href="<?= e($base) ?>/article/<?= e($a['slug']) ?>" target="_blank" rel="noopener">Lihat di situs ↗</a><?php endif; ?></p>
+    <form method="post" class="form">
+      <?= csrf_field() ?><input type="hidden" name="id" value="<?= (int)$id ?>">
+      <label>Judul<input name="title" value="<?= e($form['title']) ?>" required placeholder="mis. 10 Drama Korea Balas Dendam Terbaik untuk Ditonton"></label>
+      <div class="grid2">
+        <label>Kata kunci video terkait <small>(video yang cocok tampil di bawah artikel & dipakai AI)</small><input name="keyword" value="<?= e($form['keyword']) ?>"></label>
+        <label>Slug URL <small>(kosong = otomatis dari judul)</small><input name="slug" value="<?= e($form['slug']) ?>"></label>
+      </div>
+      <label>Ringkasan / meta description <small>(1–2 kalimat, tampil di Google)</small><textarea name="excerpt" rows="2"><?= e($form['excerpt']) ?></textarea></label>
+      <label>Isi artikel <small>Format: <code>## Subjudul</code>, <code>**tebal**</code>, <code>*miring*</code>, <code>- daftar</code>, <code>[teks](https://link)</code>, <code>![alt](https://gambar.jpg)</code>, baris <code>[video:slug-video]</code> untuk menyisipkan video. Iklan in-article otomatis setelah paragraf ke-2.</small>
+        <textarea name="body" rows="22" class="code"><?= e($form['body']) ?></textarea></label>
+      <div class="grid3">
+        <label>Gambar sampul (URL https, opsional)<input name="cover" value="<?= e($form['cover']) ?>"></label>
+        <label>Status<select name="status"><option value="draft">Draf</option><option value="published" <?= $form['status'] === 'published' ? 'selected' : '' ?>>Terbitkan</option></select></label>
+        <label>Tanggal terbit (UTC, kosong = sekarang)<input type="datetime-local" name="published_at" value="<?= e($form['published_at'] ? str_replace(' ', 'T', substr($form['published_at'], 0, 16)) : '') ?>"></label>
+      </div>
+      <div class="row"><button class="btn">Simpan</button></div>
+      <fieldset><legend>Bantuan AI (opsional)</legend>
+        <label>Catatan untuk AI <small>(sudut pandang, poin wajib, gaya bahasa)</small><textarea name="notes" rows="2"><?= e($form['notes']) ?></textarea></label>
+        <button class="btn ghost" name="act" value="ai" onclick="return !this.form.body.value || confirm('Isi artikel akan diganti dengan draf AI. Lanjutkan?')">Buat draf dengan AI</button>
+        <p class="help">Memakai pengaturan AI (menu Global). Biaya API ditagih penyedia AI. Google tidak menghukum tulisan berbantuan AI, tapi menghukum konten massal tanpa nilai tambah — jadi sunting dulu.</p>
+      </fieldset>
+    </form>
+    <?php echo admin_layout($a ? 'Edit artikel' : 'Tulis artikel', (string)ob_get_clean());
+}
+
+/* ================= Sosial: share, Telegram, push ================= */
+
+function page_social(): void
+{
+    $site = current_site();
+    if (is_post()) {
+        $c = $site->cfg;
+        if (post('act') === 'tg_test') {
+            try {
+                telegram_api('sendMessage', ['chat_id' => (string)cfg('social.telegram_chat'), 'text' => 'Tes dari ' . cfg('site.name') . ' (' . cfg('site.url') . ') ✅']);
+                flash('Pesan tes terkirim ke Telegram.');
+            } catch (Throwable $e) {
+                flash('Gagal: ' . $e->getMessage(), 'err');
+            }
+            redirect('/admin/social');
+        }
+        $c['share']['enabled'] = (bool)post('share.enabled', false);
+        $c['share']['networks'] = array_values(array_intersect(array_keys(SHARE_NETWORKS), (array)post('share.networks', [])));
+        $wasOn = (bool)$c['social']['telegram_enabled'];
+        $c['social']['telegram_enabled'] = (bool)post('social.telegram_enabled', false);
+        $c['social']['telegram_token'] = trim((string)post('social.telegram_token'));
+        $c['social']['telegram_chat'] = trim((string)post('social.telegram_chat'));
+        $c['social']['telegram_per_run'] = clamp_int(post('social.telegram_per_run'), 1, 30, 5);
+        $c['push']['head'] = (string)post('push.head');
+        $name = trim((string)post('push.sw_name'));
+        $c['push']['sw_name'] = preg_match('/^[A-Za-z0-9_.-]{1,60}\.js$/', $name) ? $name : '';
+        $c['push']['sw_code'] = (string)post('push.sw_code');
+        $site->save($c);
+        if (!$wasOn && $c['social']['telegram_enabled']) {
+            meta_set('tg_since', now());   // hanya video/artikel baru setelah ini yang dikirim
+        }
+        cache_clear();
+        flash('Pengaturan sosial disimpan.');
+        redirect('/admin/social');
+    }
+    $c = $site->cfg;
+    $base = rtrim((string)cfg('site.url'), '/');
+    ob_start(); ?>
+    <form method="post" class="form">
+      <?= csrf_field() ?>
+      <fieldset><legend>Tombol share (video & artikel)</legend>
+        <label class="check"><input type="checkbox" name="share[enabled]" value="1" <?= $c['share']['enabled'] ? 'checked' : '' ?>> Tampilkan tombol share</label>
+        <div class="grid3">
+          <?php foreach (SHARE_NETWORKS as $k => [$label]): ?>
+            <label class="check"><input type="checkbox" name="share[networks][]" value="<?= $k ?>" <?= in_array($k, (array)$c['share']['networks'], true) ? 'checked' : '' ?>> <?= e($label) ?></label>
+          <?php endforeach; ?>
+        </div>
+        <p class="help">Tombol berupa link biasa (tanpa script Facebook/X), jadi tidak memperlambat halaman dan tidak menambah cookie pihak ketiga. Tombol "Share" bawaan HP dan "Salin link" selalu ada.
+          Saran: Indonesia/India → WhatsApp & Telegram; AS/Eropa → Facebook, Pinterest, Reddit, X; Jepang/Taiwan → LINE.</p>
+      </fieldset>
+
+      <fieldset><legend>Auto-post ke channel Telegram</legend>
+        <label class="check"><input type="checkbox" name="social[telegram_enabled]" value="1" <?= $c['social']['telegram_enabled'] ? 'checked' : '' ?>> Kirim video & artikel baru otomatis (setiap cron)</label>
+        <div class="grid3">
+          <label>Token bot <small>(dari @BotFather)</small><input name="social[telegram_token]" value="<?= e($c['social']['telegram_token']) ?>" placeholder="123456:ABC..."></label>
+          <label>Channel <small>(@namachannel atau ID -100...)</small><input name="social[telegram_chat]" value="<?= e($c['social']['telegram_chat']) ?>" placeholder="@channelanda"></label>
+          <label>Maks. posting per jalan<input type="number" name="social[telegram_per_run]" value="<?= (int)$c['social']['telegram_per_run'] ?>" min="1" max="30"></label>
+        </div>
+        <p class="help">Cara: buat bot di @BotFather → salin token → buat channel → tambahkan bot sebagai <b>admin</b> channel → simpan → klik "Kirim tes". Hanya konten yang masuk <i>setelah</i> fitur diaktifkan yang dikirim (tidak membanjiri channel).</p>
+      </fieldset>
+
+      <fieldset><legend>Push notification (OneSignal, Monetag, PropellerAds, dll.)</legend>
+        <label>Script di &lt;head&gt; <small>(dari penyedia push)</small><textarea name="push[head]" rows="3" class="code"><?= e($c['push']['head']) ?></textarea></label>
+        <div class="grid2">
+          <label>Nama file service worker <small>(mis. <code>sw.js</code> atau <code>OneSignalSDKWorker.js</code>)</small><input name="push[sw_name]" value="<?= e($c['push']['sw_name']) ?>"></label>
+          <label>Isi file service worker <small>(salin dari penyedia)</small><textarea name="push[sw_code]" rows="3" class="code"><?= e($c['push']['sw_code']) ?></textarea></label>
+        </div>
+        <?php if (push_sw_name()): ?><p class="help">File tersedia di: <a href="<?= e($base . '/' . push_sw_name()) ?>" target="_blank" rel="noopener"><?= e($base . '/' . push_sw_name()) ?></a></p><?php endif; ?>
+        <p class="help">Push dari jaringan iklan (Monetag/PropellerAds) adalah produk iklan: aman dipakai bersama AdSense selama tidak berupa popunder/redirect di halaman, tapi tetap minta izin pengunjung secara jujur.</p>
+      </fieldset>
+      <button class="btn">Simpan</button>
+    </form>
+    <?php if ($c['social']['telegram_token'] && $c['social']['telegram_chat']): ?>
+    <form method="post" class="row"><?= csrf_field() ?><input type="hidden" name="act" value="tg_test"><button class="btn ghost">Kirim tes ke Telegram</button></form>
+    <?php endif;
+    echo admin_layout('Sosial & push', (string)ob_get_clean());
+}
+
 /* ================= Layout admin ================= */
 
 function admin_layout(string $title, string $body, bool $nav = true): string
@@ -918,8 +1176,8 @@ function admin_layout(string $title, string $body, bool $nav = true): string
     $sites = $nav && admin_logged_in() ? sites_all() : [];
     $cur = Site::$current?->id;
     $path = (string)parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH);
-    $links = ['/admin' => 'Dashboard', '/admin/settings' => 'Pengaturan', '/admin/channels' => 'Channel', '/admin/ads' => 'Iklan',
-        '/admin/sites' => 'Situs', '/admin/global' => 'Global'];
+    $links = ['/admin' => 'Dashboard', '/admin/settings' => 'Pengaturan', '/admin/channels' => 'Sumber video', '/admin/articles' => 'Artikel',
+        '/admin/ads' => 'Iklan', '/admin/social' => 'Sosial', '/admin/sites' => 'Situs', '/admin/global' => 'Global'];
     ob_start(); ?><!doctype html>
 <html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow"><title><?= e($title) ?> · AGC Video</title>

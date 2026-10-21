@@ -10,6 +10,13 @@ $schema ??= null;
 $theme = cfg('site.theme') === 'light' ? 'light' : 'dark';
 $accent = preg_match('/^#[0-9a-fA-F]{6}$/', (string)cfg('site.accent', '')) ? (string)cfg('site.accent') : '';
 $topics = function_exists('topics_with_videos') ? topics_with_videos() : [];
+$hreflang_video ??= null;
+$reqPath = '/' . trim((string)parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH), '/');
+$alternates = $noindex || !empty($_GET) ? [] : ($hreflang_video !== null
+    ? hreflang_links($reqPath, (string)$hreflang_video)
+    : (in_array($reqPath, ['/', '/latest', '/popular', '/series', '/articles'], true) ? hreflang_links($reqPath === '/' ? '/' : $reqPath) : []));
+$sisters = sister_sites();
+$hasArticles = function_exists('articles_count') && articles_count() > 0;
 ?><!doctype html>
 <html lang="<?= e(html_lang()) ?>" data-theme="<?= $theme ?>">
 <head>
@@ -18,7 +25,10 @@ $topics = function_exists('topics_with_videos') ? topics_with_videos() : [];
 <title><?= e($title) ?></title>
 <meta name="description" content="<?= e($description) ?>">
 <?php if ($noindex): ?><meta name="robots" content="noindex, follow">
+<?php else: ?><meta name="robots" content="index, follow, max-image-preview:large">
 <?php endif; ?>
+<?php foreach ($alternates as [$hl, $hu]): ?><link rel="alternate" hreflang="<?= e($hl) ?>" href="<?= e($hu) ?>">
+<?php endforeach; ?>
 <?php if ($canonical): ?><link rel="canonical" href="<?= e($canonical) ?>">
 <meta property="og:url" content="<?= e($canonical) ?>">
 <?php endif; ?>
@@ -38,6 +48,7 @@ $topics = function_exists('topics_with_videos') ? topics_with_videos() : [];
 <?php if ($schema) echo json_ld($schema), "\n"; ?>
 <?= cfg('analytics', '') ?>
 <?= adsense_head() ?>
+<?= cfg('push.head', '') ?>
 <?= cfg('ads.head', '') ?>
 </head>
 <body>
@@ -51,6 +62,7 @@ $topics = function_exists('topics_with_videos') ? topics_with_videos() : [];
       <a href="/latest"><?= e(t('latest')) ?></a>
       <a href="/popular"><?= e(t('popular')) ?></a>
       <a href="/series"><?= e(t('series')) ?></a>
+      <?php if ($hasArticles): ?><a href="/articles"><?= e(t('articles')) ?></a><?php endif; ?>
     </nav>
   </div>
 </header>
@@ -73,23 +85,49 @@ $topics = function_exists('topics_with_videos') ? topics_with_videos() : [];
       <a href="/contact"><?= e(t('page_contact')) ?></a>
       <?php if (show_impressum()): ?><a href="/impressum"><?= e(t('page_impressum')) ?></a><?php endif; ?>
     </nav>
+    <?php if ($sisters): ?>
+    <nav class="langs" aria-label="<?= e(t('languages')) ?>">🌐
+      <?php foreach ($sisters as $sis): ?>
+        <?php if ($sis['id'] === Site::$current?->id): ?><b><?= e(LANGS[$sis['lang']] ?? $sis['lang']) ?></b>
+        <?php else: ?><a href="<?= e($sis['url']) ?>/" hreflang="<?= e($sis['tag']) ?>" lang="<?= e($sis['tag']) ?>"><?= e(LANGS[$sis['lang']] ?? $sis['lang']) ?></a><?php endif; ?>
+      <?php endforeach; ?>
+    </nav>
+    <?php endif; ?>
     <p class="muted small"><?= e(t('footer_note')) ?></p>
     <p class="muted small">© <?= date('Y') ?> <?= e(cfg('site.name')) ?></p>
   </div>
 </footer>
 <script>
-document.querySelectorAll('.player[data-id]').forEach(function (p) {
+document.querySelectorAll('.player[data-embed]').forEach(function (p) {
   p.addEventListener('click', function () {
-    var f = document.createElement('iframe');
-    f.src = 'https://www.youtube-nocookie.com/embed/' + encodeURIComponent(p.dataset.id) + '?autoplay=1&rel=0&playsinline=1';
-    f.title = p.dataset.title || '';
-    f.allow = 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share';
-    f.allowFullscreen = true;
-    f.referrerPolicy = 'strict-origin-when-cross-origin';
+    var src = p.dataset.embed, el;
+    if (!src) return;
+    if (p.dataset.kind === 'mp4') {
+      el = document.createElement('video');
+      el.src = src; el.controls = true; el.autoplay = true; el.playsInline = true;
+      if (p.dataset.poster) el.poster = p.dataset.poster;
+    } else {
+      el = document.createElement('iframe');
+      el.src = src + (src.indexOf('?') < 0 ? '?' : '&') + (src.indexOf('youtube') > -1 ? 'autoplay=1&rel=0&playsinline=1' : 'autoplay=1');
+      el.allow = 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share; fullscreen';
+      el.allowFullscreen = true;
+      el.referrerPolicy = 'strict-origin-when-cross-origin';
+    }
+    el.title = p.dataset.title || '';
     p.innerHTML = '';
-    p.appendChild(f);
+    p.appendChild(el);
     p.classList.add('is-playing');
   }, { once: true });
+});
+document.querySelectorAll('[data-copy]').forEach(function (b) {
+  b.addEventListener('click', function () {
+    var done = function () { b.textContent = b.dataset.done || 'OK'; };
+    if (navigator.clipboard) navigator.clipboard.writeText(b.dataset.copy).then(done); else done();
+  });
+});
+document.querySelectorAll('[data-native-share]').forEach(function (b) {
+  if (!navigator.share) { b.remove(); return; }
+  b.addEventListener('click', function () { navigator.share({ title: b.dataset.title, url: b.dataset.url }).catch(function () {}); });
 });
 </script>
 <?= ad_allowed('body_end') ? (string)cfg('ads.body_end', '') : '' ?>

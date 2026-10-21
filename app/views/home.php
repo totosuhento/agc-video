@@ -22,6 +22,13 @@ $intro = trim((string)cfg('site.intro', '')); ?>
 </section>
 <?php endif; ?>
 
+<?php if (!empty($articles)): ?>
+<section class="block">
+  <div class="block-head"><h2><?= e(t('latest_articles')) ?></h2><a href="/articles"><?= e(t('view_all')) ?> →</a></div>
+  <div class="article-list"><?php foreach ($articles as $a): ?><?= view('partials/article_card', ['a' => $a]) ?><?php endforeach; ?></div>
+</section>
+<?php endif; ?>
+
 <?php if ($series): ?>
 <section class="block">
   <div class="block-head"><h2><?= e(t('all_series')) ?></h2><a href="/series"><?= e(t('view_all')) ?> →</a></div>

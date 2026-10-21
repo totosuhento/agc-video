@@ -203,12 +203,15 @@ final class Site
     {
         // Daftar (channels, keywords, ...) diganti utuh, bukan digabung per indeks
         $merged = array_replace_recursive(default_config(), $config);
-        foreach (['youtube' => ['channels', 'include_keywords', 'exclude_keywords'], 'site' => ['keywords']] as $sec => $keys) {
+        foreach (['youtube' => ['channels', 'include_keywords', 'exclude_keywords'], 'site' => ['keywords'], 'share' => ['networks']] as $sec => $keys) {
             foreach ($keys as $k) {
                 if (isset($config[$sec][$k])) {
                     $merged[$sec][$k] = array_values((array)$config[$sec][$k]);
                 }
             }
+        }
+        if (isset($config['sources'])) {
+            $merged['sources'] = array_values((array)$config['sources']);
         }
         q('INSERT INTO settings (k, v) VALUES (?, ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v',
             ['config', json_encode($merged, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)]);
@@ -249,6 +252,7 @@ function default_config(): array
             'name' => 'Video Hub', 'tagline' => '', 'url' => '', 'lang' => 'en', 'country' => '',
             'niche' => '', 'item' => '', 'keywords' => [], 'intro' => '',
             'theme' => 'dark', 'accent' => '#ff4d6d', 'preset' => 'custom',
+            'group' => '',                // situs saudara beda bahasa (hreflang) memakai nama grup yang sama
             'contact_email' => '', 'per_page' => 24, 'cache_ttl' => 600,
         ],
         'youtube' => [
@@ -261,11 +265,15 @@ function default_config(): array
             'mode' => 'adsense',          // adsense | network | custom
             'adsense_client' => '',       // ca-pub-xxxxxxxxxxxxxxxx
             'label' => true,
-            'head' => '', 'top' => '', 'below_player' => '', 'in_list' => '', 'sidebar' => '', 'footer' => '',
+            'head' => '', 'top' => '', 'below_player' => '', 'in_list' => '', 'in_article' => '', 'sidebar' => '', 'footer' => '',
             'body_end' => '',             // popunder / social bar / smartlink (khusus mode network/custom)
             'cta_enabled' => false, 'cta_text' => '', 'cta_note' => '', 'cta_url' => '',
             'ads_txt' => '',
         ],
+        'sources' => [],                  // sumber selain YouTube: [{type, value}]
+        'share' => ['enabled' => true, 'networks' => ['whatsapp', 'telegram', 'facebook', 'x', 'pinterest', 'reddit']],
+        'social' => ['telegram_enabled' => false, 'telegram_token' => '', 'telegram_chat' => '', 'telegram_per_run' => 5],
+        'push' => ['head' => '', 'sw_name' => '', 'sw_code' => ''],
         'legal' => ['name' => '', 'address' => ''],
         'analytics' => '',
     ];
@@ -311,4 +319,92 @@ function cron_key(): string
         gset('cron_key', $k);
     }
     return $k;
+}
+
+/* ---------- Situs saudara (beda bahasa, satu grup) untuk hreflang ---------- */
+
+/** Baca pengaturan situs lain tanpa mengganti situs aktif. */
+function site_peek(string $id): ?array
+{
+    $f = site_dir($id) . '/database.sqlite';
+    if (!is_file($f)) {
+        return null;
+    }
+    try {
+        $pdo = new PDO('sqlite:' . $f, null, null, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+        $raw = $pdo->query("SELECT v FROM settings WHERE k = 'config'")->fetchColumn();
+        $cfg = array_replace_recursive(default_config(), $raw ? (json_decode((string)$raw, true) ?: []) : []);
+        return ['pdo' => $pdo, 'cfg' => $cfg];
+    } catch (Throwable) {
+        return null;
+    }
+}
+
+/**
+ * Situs dalam grup yang sama dengan situs aktif (termasuk dirinya).
+ * @return array<int, array{id:string, lang:string, tag:string, url:string, pdo:PDO}>
+ */
+function sister_sites(): array
+{
+    static $memo = [];
+    $site = Site::$current;
+    $group = trim((string)cfg('site.group', ''));
+    if (!$site || $group === '') {
+        return [];
+    }
+    if (isset($memo[$site->id])) {
+        return $memo[$site->id];
+    }
+    $out = [];
+    foreach (mq('SELECT id, primary_host FROM sites ORDER BY created_at')->fetchAll() as $row) {
+        $p = site_peek($row['id']);
+        if (!$p || trim((string)$p['cfg']['site']['group']) !== $group) {
+            continue;
+        }
+        $lang = (string)$p['cfg']['site']['lang'];
+        $c = strtoupper((string)$p['cfg']['site']['country']);
+        $out[] = [
+            'id' => $row['id'], 'lang' => $lang,
+            'tag' => $lang === 'zh' ? 'zh-Hans' : $lang . (preg_match('/^[A-Z]{2}$/', $c) ? '-' . $c : ''),
+            'url' => rtrim((string)($p['cfg']['site']['url'] ?: 'https://' . $row['primary_host']), '/'),
+            'pdo' => $p['pdo'],
+        ];
+    }
+    return $memo[$site->id] = count($out) > 1 ? $out : [];
+}
+
+/**
+ * Link hreflang untuk halaman ini. $path: '/', '/latest', ... ; $videoId: untuk halaman video.
+ * @return array<int, array{0:string, 1:string}> [hreflang, url]
+ */
+function hreflang_links(string $path, ?string $videoId = null): array
+{
+    $sisters = sister_sites();
+    if (!$sisters) {
+        return [];
+    }
+    $links = [];
+    foreach ($sisters as $s) {
+        if ($videoId !== null) {
+            $st = $s['pdo']->prepare('SELECT slug FROM videos WHERE id = ? AND is_active = 1');
+            $st->execute([$videoId]);
+            $slug = $st->fetchColumn();
+            if ($slug === false) {
+                continue;
+            }
+            $links[] = [$s['tag'], $s['url'] . '/video/' . $slug];
+        } else {
+            $links[] = [$s['tag'], $s['url'] . $path];
+        }
+    }
+    if (count($links) < 2) {
+        return [];
+    }
+    foreach ($sisters as $i => $s) {
+        if ($s['lang'] === 'en' && isset($links[$i]) && $videoId === null) {
+            $links[] = ['x-default', $s['url'] . $path];
+            break;
+        }
+    }
+    return $links;
 }

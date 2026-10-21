@@ -62,6 +62,11 @@ jobs:
             expect "$p" localhost 200
           done
           expect /video/tidak-ada localhost 404
+          expect /articles localhost 200
+          expect /sw.js localhost 404
+          docker exec agc php -r 'require "app/bootstrap.php"; Site::activate("localhost"); $c=current_site()->cfg; $c["push"]=["head"=>"","sw_name"=>"sw.js","sw_code"=>"//sw"]; $c["sources"]=[["type"=>"nasa","value"=>"apollo"]]; current_site()->save($c); cache_clear();' || fail "config"
+          expect /sw.js localhost 200
+          expect /privacy localhost 200
           expect / kdrama.test 200
           expect /impressum kdrama.test 404
           expect / tidak-terdaftar.test 404

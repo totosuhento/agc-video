@@ -1,6 +1,9 @@
 <?php
 /** @var array $v @var string $text @var ?array $series @var array $episodes @var ?array $prev @var ?array $next @var array $related */
-$poster = $v['thumb'] ?: yt_thumb($v['id']);
+$src = video_source($v);
+$poster = video_source($v) === 'youtube' ? ($v['thumb'] ?: yt_thumb($v['id'])) : (string)$v['thumb'];
+$embed = video_embed_url($v);
+$player = $src === 'nasa' ? 'mp4' : 'iframe';
 ?>
 <nav class="crumbs">
   <a href="/"><?= e(t('home')) ?></a> ›
@@ -10,8 +13,8 @@ $poster = $v['thumb'] ?: yt_thumb($v['id']);
 
 <div class="watch">
   <article class="watch-main">
-    <div class="player" data-id="<?= e($v['id']) ?>" data-title="<?= e($v['title']) ?>" role="button" tabindex="0" aria-label="<?= e(t('play')) ?>">
-      <img src="<?= e($poster) ?>" alt="<?= e($v['title']) ?>" width="1280" height="720" fetchpriority="high">
+    <div class="player player-<?= e($src) ?>" data-embed="<?= e($embed) ?>" data-kind="<?= $player ?>" data-poster="<?= e($poster) ?>" data-title="<?= e($v['title']) ?>" role="button" tabindex="0" aria-label="<?= e(t('play')) ?>">
+      <?php if ($poster !== ''): ?><img src="<?= e($poster) ?>" alt="<?= e($v['title']) ?>" width="1280" height="720" fetchpriority="high"><?php endif; ?>
       <span class="play-btn" aria-hidden="true"></span>
     </div>
 
@@ -45,9 +48,10 @@ $poster = $v['thumb'] ?: yt_thumb($v['id']);
     <?php endif; ?>
 
     <p class="source">
-      <span class="badge"><?= e(t('official_channel')) ?></span>
-      <a href="https://www.youtube.com/watch?v=<?= e(rawurlencode($v['id'])) ?>" target="_blank" rel="noopener nofollow"><?= e(t('watch_on_youtube')) ?> ↗</a>
+      <span class="badge"><?= e(is_public_domain_source($src) ? t('public_domain') : t('official_channel')) ?></span>
+      <?php if (($su = video_source_url($v)) !== ''): ?><a href="<?= e($su) ?>" target="_blank" rel="noopener nofollow"><?= e(t('watch_on_youtube', source_name($src))) ?> ↗</a><?php endif; ?>
     </p>
+    <?= share_buttons(url('video/' . $v['slug']), $v['title'], $poster) ?>
 
     <?php if ($series && count($episodes) > 1): ?>
     <section class="block">
